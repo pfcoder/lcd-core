@@ -163,7 +163,7 @@ impl MinerOperation for AvalonMiner {
             //login(&mut easy, &ip)?;
             // if fail to get config, try to reboot
             let mut config = get_config(&mut easy, &ip).or_else(|_| {
-                let _ = reboot(&mut easy, &ip);
+                // let _ = reboot(&mut easy, &ip);
                 // return error
                 Err(MinerError::ReadAvalonConfigError)
             })?;
@@ -607,7 +607,7 @@ mod tests {
     #[test]
     fn avalon_tcp_cmd_reboot() {
         let _ = *SETUP;
-        let ip = "192.168.187.186";
+        let ip = "192.168.189.213";
         let _res = tcp_write_reboot(ip).unwrap();
         assert!(true);
     }
