@@ -162,11 +162,34 @@ impl MinerOperation for AvalonMiner {
             //home(&mut easy, &ip)?;
             //login(&mut easy, &ip)?;
             // if fail to get config, try to reboot
-            let mut config = get_config(&mut easy, &ip).or_else(|_| {
-                // let _ = reboot(&mut easy, &ip);
-                // return error
-                Err(MinerError::ReadAvalonConfigError)
+            let config_op = get_config(&mut easy, &ip).or_else(|_| {
+                // try to read pools through tcp
+                let account_result = tcp_query_account(&ip)?;
+                let worker = account_result.split('.').next().unwrap();
+                let config_worker = account.name.split('.').next().unwrap();
+                if worker != config_worker {
+                    // reboot
+                    info!(
+                        "avalon account not match and can not open web, reboot: {} {} {}",
+                        ip, worker, config_worker
+                    );
+                    tcp_write_reboot(&ip)?;
+                    return Err(MinerError::ReadAvalonConfigError);
+                } else {
+                    // worker is match, and can read from tcp approve machine live, do nothing, return Ok
+                    info!(
+                        "avalon account match and can not open web, do nothing: {} {} {}",
+                        ip, worker, config_worker
+                    );
+                    return Ok(None);
+                }
             })?;
+            let mut config;
+            if let Some(c) = config_op {
+                config = c;
+            } else {
+                return Ok(());
+            }
 
             if !is_force && config.is_same_account(&account) && config.is_same_mode(&account) {
                 info!(
@@ -186,7 +209,7 @@ impl MinerOperation for AvalonMiner {
     fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
         let machine_json = query_machine(&ip)?;
         let miner_json = query_miner_type(&ip)?;
-        let conf = get_config(&mut Easy::new(), &ip)?;
+        let conf = get_config(&mut Easy::new(), &ip)?.unwrap();
 
         let machine_type = miner_json["hwtype"].as_str().unwrap_or("unknown");
         let elapsed = machine_json["elapsed"]
@@ -247,7 +270,7 @@ impl MinerOperation for AvalonMiner {
 
     fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
         let mut easy = Easy::new();
-        let mut conf = get_config(&mut easy, &ip)?;
+        let mut conf = get_config(&mut easy, &ip)?.unwrap();
         conf.apply_pool_config(pools, &ip);
         update_miner_config(&mut easy, &ip, &conf)?;
         reboot(&mut easy, &ip)
@@ -381,7 +404,7 @@ fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
     }
 }
 
-fn get_config(easy: &mut Easy, ip: &str) -> Result<AvalonConfig, MinerError> {
+fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerError> {
     let url = INFO_URL.replace("{}", ip) + rand::random::<u64>().to_string().as_str();
     info!("avalon get_config url: {}", url);
 
@@ -406,7 +429,7 @@ fn get_config(easy: &mut Easy, ip: &str) -> Result<AvalonConfig, MinerError> {
             // convert to json
             let config: AvalonConfig = serde_json::from_str(target)?;
             info!("avalon get_config result: {:?}", config);
-            Ok(config)
+            Ok(Some(config))
         }
         None => Err(MinerError::ReadAvalonConfigError),
     }
@@ -491,7 +514,7 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
     info!("write done for cmd {}", cmd);
 
     if (is_waiting_write) {
-        let mut buf = [0; 4096];
+        let mut buf = [0; 10240];
         let n = stream.read(&mut buf)?;
         let res = String::from_utf8(buf[..n].to_vec())?;
         info!("avalon tcp_query result: {}", res);
@@ -502,7 +525,23 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
 
 /// query version
 fn tcp_query_version(ip: &str) -> Result<String, MinerError> {
-    tcp_cmd(ip, 4028, "version", true) // cgminer-api-version
+    tcp_cmd(ip, 4028, "version", true)
+}
+
+/// query pool
+fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
+    let pool = tcp_cmd(ip, 4028, "pools", true)?;
+    //info!("avalon tcp_query_account result: {}", pool);
+    // find first User=xxx, extract xxx
+    let re = Regex::new(r"User=([^,]+),").unwrap();
+    match re.captures(&pool) {
+        Some(caps) => {
+            let target = caps.get(1).unwrap().as_str();
+            info!("User target: {}", target);
+            Ok(target.to_string())
+        }
+        None => Err(MinerError::ReadAvalonConfigError),
+    }
 }
 
 /// reboot machine
@@ -533,7 +572,7 @@ mod tests {
         let _ = *SETUP;
         let ip = "192.168.187.170";
         let mut easy = Easy::new();
-        let config = get_config(&mut easy, ip).unwrap();
+        let config = get_config(&mut easy, ip).unwrap().unwrap();
         assert_eq!(config.mode, 1);
     }
 
@@ -609,6 +648,14 @@ mod tests {
         let _ = *SETUP;
         let ip = "192.168.189.213";
         let _res = tcp_write_reboot(ip).unwrap();
+        assert!(true);
+    }
+
+    #[test]
+    fn avalon_tcp_query_account() {
+        let _ = *SETUP;
+        let ip = "192.168.187.186";
+        let res = tcp_query_account(ip).unwrap();
         assert!(true);
     }
 }
