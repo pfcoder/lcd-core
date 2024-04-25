@@ -50,4 +50,7 @@ pub enum MinerError {
 
     #[error(transparent)]
     JoinError(#[from] tokio::task::JoinError),
+
+    #[error(transparent)]
+    StdIoError(#[from] std::io::Error),
 }

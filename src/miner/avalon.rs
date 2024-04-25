@@ -1,3 +1,4 @@
+use std::io::{Read, Write};
 use std::{fmt, time::Duration};
 
 use super::entry::*;
@@ -160,7 +161,13 @@ impl MinerOperation for AvalonMiner {
             easy.timeout(Duration::from_secs(10))?;
             //home(&mut easy, &ip)?;
             //login(&mut easy, &ip)?;
-            let mut config = get_config(&mut easy, &ip)?;
+            // if fail to get config, try to reboot
+            let mut config = get_config(&mut easy, &ip).or_else(|_| {
+                let _ = reboot(&mut easy, &ip);
+                // return error
+                Err(MinerError::ReadAvalonConfigError)
+            })?;
+
             if !is_force && config.is_same_account(&account) && config.is_same_mode(&account) {
                 info!(
                     "avalon account and mode not changed: {} current_account:{} switch_account:{}, current_mode: {}, switch_mode: {}",
@@ -441,6 +448,10 @@ fn update_miner_config(easy: &mut Easy, ip: &str, conf: &AvalonConfig) -> Result
 }
 
 fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
+    // use tcp interface to reboot
+    tcp_write_reboot(ip)?;
+    return Ok(());
+
     let url = REBOOT_URL.replace("{}", ip);
     info!("avalon reboot url: {}", url);
 
@@ -473,6 +484,37 @@ fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
     Ok(())
 }
 
+fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<String, MinerError> {
+    let addr = format!("{}:{}", ip, port);
+    let mut stream = std::net::TcpStream::connect(addr)?;
+    stream.write_all(cmd.as_bytes())?;
+    info!("write done for cmd {}", cmd);
+
+    if (is_waiting_write) {
+        let mut buf = [0; 4096];
+        let n = stream.read(&mut buf)?;
+        let res = String::from_utf8(buf[..n].to_vec())?;
+        info!("avalon tcp_query result: {}", res);
+        return Ok(res);
+    }
+    return Ok("".to_string());
+}
+
+/// query version
+fn tcp_query_version(ip: &str) -> Result<String, MinerError> {
+    tcp_cmd(ip, 4028, "version", true) // cgminer-api-version
+}
+
+/// reboot machine
+fn tcp_write_reboot(ip: &str) -> Result<String, MinerError> {
+    tcp_cmd(ip, 4028, "ascset|0,reboot,0", false) // cgminer-api-restart
+}
+
+/// config pool
+// fn tcp_write_pool(ip: &str, cfg: &AvalonConfig) -> Result<String, MinerError> {
+//     tcp_cmd(ip, 4028, "ascset|0,config,0", true) // cgminer-api-config
+// }
+
 //test
 #[cfg(test)]
 mod tests {
@@ -480,9 +522,15 @@ mod tests {
 
     use super::*;
 
+    lazy_static! {
+        static ref SETUP: () = {
+            env_logger::init();
+        };
+    }
+
     #[tokio::test]
     async fn avalon_test_get_config() {
-        env_logger::init();
+        let _ = *SETUP;
         let ip = "192.168.187.170";
         let mut easy = Easy::new();
         let config = get_config(&mut easy, ip).unwrap();
@@ -491,7 +539,7 @@ mod tests {
 
     #[tokio::test]
     async fn avalon_test_update_config() {
-        env_logger::init();
+        let _ = *SETUP;
         let ip = "192.168.189.162";
         let account = Account {
             id: 1i32,
@@ -532,7 +580,7 @@ mod tests {
 
     #[tokio::test]
     async fn avalon_test_reboot() {
-        env_logger::init();
+        let _ = *SETUP;
         let ip = "192.168.189.207";
         let mut easy = Easy::new();
         let res = reboot(&mut easy, ip).unwrap();
@@ -541,10 +589,26 @@ mod tests {
 
     #[tokio::test]
     async fn avalon_test_query() {
-        env_logger::init();
+        let _ = *SETUP;
         let ip = "192.168.189.207";
         let miner = AvalonMiner {};
         let info = miner.query(ip.to_string()).unwrap();
         info!("avalon info: {:?}", info);
+    }
+
+    #[test]
+    fn avalon_tcp_query_version() {
+        let _ = *SETUP;
+        let ip = "192.168.187.186";
+        let res = tcp_query_version(ip).unwrap();
+        assert!(res.contains("STATUS"));
+    }
+
+    #[test]
+    fn avalon_tcp_cmd_reboot() {
+        let _ = *SETUP;
+        let ip = "192.168.187.186";
+        let _res = tcp_write_reboot(ip).unwrap();
+        assert!(true);
     }
 }
