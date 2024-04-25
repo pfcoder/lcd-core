@@ -162,11 +162,13 @@ impl MinerOperation for AvalonMiner {
             //home(&mut easy, &ip)?;
             //login(&mut easy, &ip)?;
             // if fail to get config, try to reboot
+            // try to read current account through tcp
+            let account_result = tcp_query_account(&ip)?;
+            let worker = account_result.split('.').next().unwrap();
+            let config_worker = account.name.split('.').next().unwrap();
+
             let config_op = get_config(&mut easy, &ip).or_else(|_| {
                 // try to read pools through tcp
-                let account_result = tcp_query_account(&ip)?;
-                let worker = account_result.split('.').next().unwrap();
-                let config_worker = account.name.split('.').next().unwrap();
                 if worker != config_worker {
                     // reboot
                     info!(
@@ -191,10 +193,14 @@ impl MinerOperation for AvalonMiner {
                 return Ok(());
             }
 
-            if !is_force && config.is_same_account(&account) && config.is_same_mode(&account) {
+            if !is_force
+                && worker == config_worker
+                && config.is_same_account(&account)
+                && config.is_same_mode(&account)
+            {
                 info!(
                     "avalon account and mode not changed: {} current_account:{} switch_account:{}, current_mode: {}, switch_mode: {}",
-                    ip, config.worker1, account.name, config.mode, account.run_mode
+                    ip, worker, account.name, config.mode, account.run_mode
                 );
                 return Ok(());
             }
@@ -513,7 +519,7 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
     stream.write_all(cmd.as_bytes())?;
     info!("write done for cmd {}", cmd);
 
-    if (is_waiting_write) {
+    if is_waiting_write {
         let mut buf = [0; 10240];
         let n = stream.read(&mut buf)?;
         let res = String::from_utf8(buf[..n].to_vec())?;
@@ -654,7 +660,7 @@ mod tests {
     #[test]
     fn avalon_tcp_query_account() {
         let _ = *SETUP;
-        let ip = "192.168.187.186";
+        let ip = "192.168.187.182";
         let res = tcp_query_account(ip).unwrap();
         assert!(true);
     }
