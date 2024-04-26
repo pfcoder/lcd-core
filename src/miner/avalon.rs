@@ -186,7 +186,7 @@ impl MinerOperation for AvalonMiner {
                 }
 
                 // although web access error, but tcp is ok
-                return Ok(None);
+                return Ok::<Option<AvalonConfig>, MinerError>(None);
             })?;
             let mut config;
             if let Some(c) = config_op {
