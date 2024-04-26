@@ -159,7 +159,7 @@ impl MinerOperation for AvalonMiner {
             // login --> get config --> update config --> reboot
             info!("avalon start switch account: {}", ip);
             let mut easy = Easy::new();
-            easy.timeout(Duration::from_secs(10))?;
+            easy.timeout(Duration::from_secs(5))?;
             //home(&mut easy, &ip)?;
             //login(&mut easy, &ip)?;
             // if fail to get config, try to reboot
@@ -172,18 +172,18 @@ impl MinerOperation for AvalonMiner {
                 // try to read pools through tcp
                 if worker != config_worker {
                     // reboot
-                    info!(
-                        "avalon account not match and can not open web, reboot: {} {} {}",
-                        ip, worker, config_worker
-                    );
+                    // info!(
+                    //     "avalon account not match and can not open web, reboot: {} {} {}",
+                    //     ip, worker, config_worker
+                    // );
                     tcp_write_reboot(&ip)?;
                     // return Err(MinerError::ReadAvalonConfigError);
                 } else {
                     // worker is match, and can read from tcp approve machine live, do nothing, return Ok
-                    info!(
-                        "avalon account match and can not open web, do nothing: {} {} {}",
-                        ip, worker, config_worker
-                    );
+                    // info!(
+                    //     "avalon account match and can not open web, do nothing: {} {} {}",
+                    //     ip, worker, config_worker
+                    // );
                 }
 
                 // although web access error, but tcp is ok
@@ -193,6 +193,7 @@ impl MinerOperation for AvalonMiner {
             if let Some(c) = config_op {
                 config = c;
             } else {
+                info!("avalon end switch account config read fail: {}", ip);
                 return Ok(());
             }
 
@@ -201,10 +202,11 @@ impl MinerOperation for AvalonMiner {
                 && config.is_same_account(&account)
                 && config.is_same_mode(&account)
             {
-                info!(
-                    "avalon account and mode not changed: {} current_account:{} switch_account:{}, current_mode: {}, switch_mode: {}",
-                    ip, worker, account.name, config.mode, account.run_mode
-                );
+                // info!(
+                //     "avalon account and mode not changed: {} current_account:{} switch_account:{}, current_mode: {}, switch_mode: {}",
+                //     ip, worker, account.name, config.mode, account.run_mode
+                // );
+                info!("avalon end switch account no change: {}", ip);
                 return Ok(());
             }
             config.apply_account(&account, &ip);
@@ -522,13 +524,13 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
 
     let mut stream = std::net::TcpStream::connect_timeout(&addrs, Duration::from_secs(3))?;
     stream.write_all(cmd.as_bytes())?;
-    info!("write done for cmd {}", cmd);
+    //info!("write done for cmd {}", cmd);
 
     if is_waiting_write {
         let mut buf = [0; 10240];
         let n = stream.read(&mut buf)?;
         let res = String::from_utf8(buf[..n].to_vec())?;
-        info!("avalon tcp_query result: {}", res);
+        //info!("avalon tcp_query result: {}", res);
         return Ok(res);
     }
     return Ok("".to_string());
@@ -548,7 +550,7 @@ fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
     match re.captures(&pool) {
         Some(caps) => {
             let target = caps.get(1).unwrap().as_str();
-            info!("User target: {}", target);
+            //info!("User target: {}", target);
             Ok(target.to_string())
         }
         None => Err(MinerError::ReadAvalonConfigError),
