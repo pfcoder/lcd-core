@@ -164,7 +164,16 @@ impl MinerOperation for AvalonMiner {
             //login(&mut easy, &ip)?;
             // if fail to get config, try to reboot
             // try to read current account through tcp
-            let account_result = tcp_query_account(&ip)?;
+            let account_result;
+            match tcp_query_account(&ip) {
+                Ok(res) => {
+                    account_result = res;
+                }
+                Err(_) => {
+                    info!("avalon account query error: {}", ip);
+                    return Err(MinerError::ReadAvalonConfigError);
+                }
+            }
             info!("avalon account result: {} {}", ip, account_result);
             let worker = account_result.split('.').next().unwrap();
             let config_worker = account.name.split('.').next().unwrap();
