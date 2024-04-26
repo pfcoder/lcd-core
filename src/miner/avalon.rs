@@ -165,6 +165,7 @@ impl MinerOperation for AvalonMiner {
             // if fail to get config, try to reboot
             // try to read current account through tcp
             let account_result = tcp_query_account(&ip)?;
+            info!("avalon account result: {} {}", ip, account_result);
             let worker = account_result.split('.').next().unwrap();
             let config_worker = account.name.split('.').next().unwrap();
 
