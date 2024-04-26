@@ -539,6 +539,7 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
 
     let mut stream = std::net::TcpStream::connect_timeout(&addrs, Duration::from_secs(3))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
     stream.write_all(cmd.as_bytes())?;
     //info!("write done for cmd {}", cmd);
 
