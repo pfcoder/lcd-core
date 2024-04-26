@@ -152,10 +152,10 @@ impl MinerOperation for AntMiner {
             let mut conf = get_conf(&ip)?;
 
             if !is_force && conf.is_same_account(&account) {
-                info!(
-                    "ant account not changed: {} current:{} switch:{}",
-                    ip, conf.pools[0].user, account.name
-                );
+                // info!(
+                //     "ant account not changed: {} current:{} switch:{}",
+                //     ip, conf.pools[0].user, account.name
+                // );
                 return Ok(());
             }
             conf.apply_account(&account, &ip);
@@ -243,7 +243,7 @@ fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
     // convert to general json
     let json: serde_json::Value = serde_json::from_str(&body)?;
 
-    info!("ant info: {:?}", json);
+    //info!("ant info: {:?}", json);
     Ok(json)
 }
 
@@ -274,7 +274,7 @@ fn get_conf(ip: &str) -> Result<AntConfig, MinerError> {
 
     let conf = serde_json::from_str::<AntConfig>(&body)?;
 
-    info!("ant conf: {:?}", conf);
+    //info!("ant conf: {:?}", conf);
     Ok(conf)
 }
 
@@ -282,7 +282,7 @@ fn update_conf(ip: &str, conf: &AntConfig) -> Result<(), MinerError> {
     let url = UPDATE_URL.replace("{}", ip);
     let conf_str = serde_json::to_string(&conf)?;
 
-    info!("ant update conf: {}", conf_str);
+    //info!("ant update conf: {}", conf_str);
 
     let mut easy = Easy::new();
     easy.url(&url)?;
@@ -317,7 +317,7 @@ fn update_conf(ip: &str, conf: &AntConfig) -> Result<(), MinerError> {
 
     let body = String::from_utf8(response_body)?;
 
-    info!("ant update conf: {}", body);
+    //info!("ant update conf: {}", body);
     Ok(())
 }
 
@@ -352,7 +352,7 @@ fn reboot(ip: &str) -> Result<(), MinerError> {
     match easy.perform() {
         Ok(_) => (),
         Err(e) => {
-            info!("ant reboot error: {:?}", e);
+            //info!("ant reboot error: {:?}", e);
         }
     }
 
