@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::net::ToSocketAddrs;
 use std::{fmt, time::Duration};
 
 use super::entry::*;
@@ -517,7 +518,9 @@ fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
 
 fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<String, MinerError> {
     let addr = format!("{}:{}", ip, port);
-    let mut stream = std::net::TcpStream::connect(addr)?;
+    let addrs = addr.to_socket_addrs()?.next().unwrap();
+
+    let mut stream = std::net::TcpStream::connect_timeout(&addrs, Duration::from_secs(3))?;
     stream.write_all(cmd.as_bytes())?;
     info!("write done for cmd {}", cmd);
 
