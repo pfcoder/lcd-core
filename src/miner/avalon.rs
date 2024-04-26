@@ -176,15 +176,17 @@ impl MinerOperation for AvalonMiner {
                         ip, worker, config_worker
                     );
                     tcp_write_reboot(&ip)?;
-                    return Err(MinerError::ReadAvalonConfigError);
+                    // return Err(MinerError::ReadAvalonConfigError);
                 } else {
                     // worker is match, and can read from tcp approve machine live, do nothing, return Ok
                     info!(
                         "avalon account match and can not open web, do nothing: {} {} {}",
                         ip, worker, config_worker
                     );
-                    return Ok(None);
                 }
+
+                // although web access error, but tcp is ok
+                return Ok(None);
             })?;
             let mut config;
             if let Some(c) = config_op {
