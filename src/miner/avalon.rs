@@ -18,7 +18,7 @@ const STATUS_URL: &str = "http://{}/get_home.cgi";
 const MINER_TYPE_URL: &str = "http://{}/get_minerinfo.cgi";
 
 // Avalon config json struct
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AvalonConfig {
     #[serde(deserialize_with = "deserialize_mode")]
     pub mode: i32,
@@ -169,39 +169,29 @@ impl MinerOperation for AvalonMiner {
             let worker = account_result.split('.').next().unwrap();
             let config_worker = account.name.split('.').next().unwrap();
 
-            let config_op = get_config(&mut easy, &ip).or_else(|_| {
-                // try to read pools through tcp
-                if worker != config_worker {
-                    // reboot
-                    // info!(
-                    //     "avalon account not match and can not open web, reboot: {} {} {}",
-                    //     ip, worker, config_worker
-                    // );
-                    tcp_write_reboot(&ip)?;
-                    // return Err(MinerError::ReadAvalonConfigError);
-                } else {
-                    // worker is match, and can read from tcp approve machine live, do nothing, return Ok
-                    // info!(
-                    //     "avalon account match and can not open web, do nothing: {} {} {}",
-                    //     ip, worker, config_worker
-                    // );
-                }
+            // let config_op = get_config(&mut easy, &ip).or_else(|_| {
+            //     // try to read pools through tcp
+            //     if worker != config_worker {
+            //         // reboot
+            //         tcp_write_reboot(&ip)?;
+            //     } else {
 
-                // although web access error, but tcp is ok
-                return Ok::<Option<AvalonConfig>, MinerError>(None);
-            })?;
-            let mut config;
-            if let Some(c) = config_op {
-                config = c;
-            } else {
-                info!("avalon end switch account config read fail: {}", ip);
-                return Ok(());
-            }
+            //     }
 
-            if !is_force
-                && worker == config_worker
-                && config.is_same_account(&account)
-                && config.is_same_mode(&account)
+            //     // although web access error, but tcp is ok
+            //     return Ok::<Option<AvalonConfig>, MinerError>(None);
+            // })?;
+            // let mut config = AvalonConfig::default();
+            // if let Some(c) = config_op {
+            //     config = c;
+            // } else {
+            //     info!("avalon end switch account config read fail: {}", ip);
+            //     return Ok(());
+            // }
+
+            if !is_force && worker == config_worker
+            // && config.is_same_account(&account)
+            // && config.is_same_mode(&account)
             {
                 // info!(
                 //     "avalon account and mode not changed: {} current_account:{} switch_account:{}, current_mode: {}, switch_mode: {}",
@@ -210,9 +200,24 @@ impl MinerOperation for AvalonMiner {
                 info!("avalon end switch account no change: {}", ip);
                 return Ok(());
             }
-            config.apply_account(&account, &ip);
-            update_miner_config(&mut easy, &ip, &config)?;
-            reboot(&mut easy, &ip)?;
+            //config.apply_account(&account, &ip);
+            //update_miner_config(&mut easy, &ip, &config)?;
+
+            let ip_splited: Vec<&str> = ip.split('.').collect();
+            let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+            let act = Account {
+                id: 1i32,
+                name: user,
+                password: account.password.clone(),
+                pool1: account.pool1.clone(),
+                pool2: account.pool2.clone(),
+                pool3: account.pool3.clone(),
+                run_mode: account.run_mode.clone(),
+            };
+
+            tcp_write_pool(&ip, &act)?;
+            tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 })?;
+            tcp_write_reboot(&ip)?;
             info!("avalon end switch account: {}", ip);
             Ok(())
         })
@@ -524,13 +529,32 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
     let addrs = addr.to_socket_addrs()?.next().unwrap();
 
     let mut stream = std::net::TcpStream::connect_timeout(&addrs, Duration::from_secs(3))?;
+    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     stream.write_all(cmd.as_bytes())?;
     //info!("write done for cmd {}", cmd);
 
     if is_waiting_write {
-        let mut buf = [0; 10240];
-        let n = stream.read(&mut buf)?;
-        let res = String::from_utf8(buf[..n].to_vec())?;
+        let mut buf = vec![0; 10240];
+        let mut total_bytes_read = 0;
+
+        loop {
+            match stream.read(&mut buf[total_bytes_read..]) {
+                Ok(n) => {
+                    if n == 0 {
+                        break;
+                    }
+                    total_bytes_read += n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // Sleep for a while before trying to read again
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        let res = String::from_utf8(buf[..total_bytes_read].to_vec())?;
         //info!("avalon tcp_query result: {}", res);
         return Ok(res);
     }
@@ -556,6 +580,42 @@ fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
         }
         None => Err(MinerError::ReadAvalonConfigError),
     }
+}
+
+/// update pool
+fn tcp_write_pool(ip: &str, pool: &Account) -> Result<(), MinerError> {
+    // ascset|0,setpool,root,root,2,stratum+tcp://btc.ss.poolin.com:443,cctrix.001,123
+    let pool1 = format!(
+        "ascset|0,setpool,root,root,0,{},{},{}",
+        pool.pool1, pool.name, pool.password
+    );
+
+    let pool2 = format!(
+        "ascset|0,setpool,root,root,1,{},{},{}",
+        pool.pool2, pool.name, pool.password
+    );
+
+    let pool3 = format!(
+        "ascset|0,setpool,root,root,2,{},{},{}",
+        pool.pool3, pool.name, pool.password
+    );
+
+    tcp_cmd(ip, 4028, &pool1, true)?;
+    tcp_cmd(ip, 4028, &pool2, true)?;
+    tcp_cmd(ip, 4028, &pool3, true)?;
+
+    Ok(())
+}
+
+fn tcp_write_workmode(ip: &str, mode: i32) -> Result<(), MinerError> {
+    // ascset|0,workmode,1
+    let cmd = format!("ascset|0,workmode,{}", mode);
+    tcp_cmd(ip, 4028, &cmd, true)?;
+    Ok(())
+}
+
+fn tcp_query_status(ip: &str) -> Result<String, MinerError> {
+    tcp_cmd(ip, 4028, "estats", true)
 }
 
 /// reboot machine
@@ -668,8 +728,35 @@ mod tests {
     #[test]
     fn avalon_tcp_query_account() {
         let _ = *SETUP;
-        let ip = "192.168.187.182";
+        let ip = "192.168.187.186";
         let res = tcp_query_account(ip).unwrap();
+        info!("avalon tcp_query_account result: {}", res);
+        assert!(true);
+    }
+
+    #[test]
+    fn avalon_tcp_write_pool() {
+        let _ = *SETUP;
+        let ip = "192.168.187.186";
+        let account = Account {
+            id: 1i32,
+            name: "sl002".to_string(),
+            password: "1212".to_string(),
+            pool1: "stratum+tcp://192.168.190.9:9011".to_string(),
+            pool2: "stratum+tcp://192.168.190.8:9011".to_string(),
+            pool3: "stratum+tcp://192.168.190.8:9011".to_string(),
+            run_mode: "0".to_string(),
+        };
+        let res = tcp_write_pool(ip, &account).unwrap();
+        assert!(true);
+    }
+
+    #[test]
+    fn avalon_tcp_query_status() {
+        let _ = *SETUP;
+        let ip = "192.168.187.186";
+        let res = tcp_query_status(ip).unwrap();
+        //info!("avalon tcp_query_status result: {}", res);
         assert!(true);
     }
 }

@@ -798,7 +798,7 @@ mod tests {
         switch_if_need(
             TEST_RUNTIME.handle().clone(),
             "PwjYsZoefh6rXZt3mIucC9XmnZb",
-            vec!["L6KSzT"],
+            vec!["ftMgRx"],
             "hoH6Gm",
             "u9zVVA",
             "IHJgN0",
