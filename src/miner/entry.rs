@@ -561,7 +561,9 @@ pub async fn switch_if_need(
         }
     }
 
+    info!("switch action len: {:?}", handles.len());
     let result = futures::future::join_all(handles).await;
+    info!("switch result len: {:?}", result.len());
 
     let mut error_ips: Vec<String> = vec![];
     let mut result_iter = result.iter();
