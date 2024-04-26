@@ -352,7 +352,7 @@ impl MinerOperation for AvalonMiner {
 
 fn query_miner_type(ip: &str) -> Result<serde_json::Value, MinerError> {
     let url = MINER_TYPE_URL.replace("{}", ip);
-    info!("avalon query_minet_type url: {}", url);
+    //info!("avalon query_minet_type url: {}", url);
 
     let mut easy = Easy::new();
     easy.url(&url)?;
@@ -375,7 +375,7 @@ fn query_miner_type(ip: &str) -> Result<serde_json::Value, MinerError> {
             let target = caps.get(1).unwrap().as_str();
             // convert to json
             let json: serde_json::Value = serde_json::from_str(target)?;
-            info!("avalon query_minet_type result: {:?}", json);
+            //info!("avalon query_minet_type result: {:?}", json);
             Ok(json)
         }
         None => Err(MinerError::ReadAvalonConfigError),
@@ -384,7 +384,7 @@ fn query_miner_type(ip: &str) -> Result<serde_json::Value, MinerError> {
 
 fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
     let url = STATUS_URL.replace("{}", ip);
-    info!("avalon query_machine url: {}", url);
+    //info!("avalon query_machine url: {}", url);
 
     let mut easy = Easy::new();
     easy.url(&url)?;
@@ -405,10 +405,10 @@ fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
     match re.captures(&body) {
         Some(caps) => {
             let target = caps.get(1).unwrap().as_str();
-            info!("target: {}", target);
+            //info!("target: {}", target);
             // convert to json
             let json: serde_json::Value = serde_json::from_str(target)?;
-            info!("avalon query_machine result: {:?}", json);
+            //info!("avalon query_machine result: {:?}", json);
             Ok(json)
         }
         None => Err(MinerError::ReadAvalonConfigError),
@@ -417,7 +417,7 @@ fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
 
 fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerError> {
     let url = INFO_URL.replace("{}", ip) + rand::random::<u64>().to_string().as_str();
-    info!("avalon get_config url: {}", url);
+    //info!("avalon get_config url: {}", url);
 
     easy.url(&url)?;
     easy.post(false)?;
@@ -439,7 +439,7 @@ fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerEr
             let target = caps.get(1).unwrap().as_str();
             // convert to json
             let config: AvalonConfig = serde_json::from_str(target)?;
-            info!("avalon get_config result: {:?}", config);
+            //info!("avalon get_config result: {:?}", config);
             Ok(Some(config))
         }
         None => Err(MinerError::ReadAvalonConfigError),
@@ -449,7 +449,7 @@ fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerEr
 fn update_miner_config(easy: &mut Easy, ip: &str, conf: &AvalonConfig) -> Result<(), MinerError> {
     // post conf as www-form-urlencoded
     let url = CONFIG_UPDATE_URL.replace("{}", ip); // + rand::random::<u64>().to_string().as_str();
-    info!("avalon update_miner_config url: {}", url);
+                                                   //info!("avalon update_miner_config url: {}", url);
 
     easy.url(&url)?;
     easy.post(true)?;
@@ -473,7 +473,7 @@ fn update_miner_config(easy: &mut Easy, ip: &str, conf: &AvalonConfig) -> Result
 
     easy.perform()?;
 
-    info!("avalon update config result: {:?}", easy.response_code()?);
+    //info!("avalon update config result: {:?}", easy.response_code()?);
     // log out body
     let _body = String::from_utf8(response_body)?;
 
@@ -487,7 +487,7 @@ fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
     return Ok(());
 
     let url = REBOOT_URL.replace("{}", ip);
-    info!("avalon reboot url: {}", url);
+    //info!("avalon reboot url: {}", url);
 
     easy.url(&url)?;
     easy.post(true)?;
@@ -504,7 +504,7 @@ fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
     match easy.perform() {
         Ok(_) => (),
         Err(e) => {
-            info!("avalon reboot error: {:?}", e);
+            //info!("avalon reboot error: {:?}", e);
             if e.code() == 28 || e.code() == 56 {
                 // timeout or connection reset is ok
             } else {
