@@ -543,38 +543,49 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
     stream.write_all(cmd.as_bytes())?;
     //info!("write done for cmd {}", cmd);
 
+    if is_waiting_write {
+        let mut buf = vec![0; 10240];
+        let mut total_bytes_read = 0;
+        let mut count = 0;
+
+        loop {
+            match stream.read(&mut buf[total_bytes_read..]) {
+                Ok(n) => {
+                    if n == 0 {
+                        break;
+                    }
+                    total_bytes_read += n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    count += 1;
+                    //info!("avalon tcp_query WouldBlock: {}", count);
+                    if count >= 3 {
+                        break;
+                    }
+                    // Sleep for a while before trying to read again
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        if total_bytes_read > 0 {
+            let res = String::from_utf8(buf[..total_bytes_read].to_vec())?;
+            //info!("avalon tcp_query result: {}", res);
+            return Ok(res);
+        }
+
+        return Err(MinerError::TcpReadError);
+    }
+    // single read
     // if is_waiting_write {
-    //     let mut buf = vec![0; 10240];
-    //     let mut total_bytes_read = 0;
-
-    //     loop {
-    //         match stream.read(&mut buf[total_bytes_read..]) {
-    //             Ok(n) => {
-    //                 if n == 0 {
-    //                     break;
-    //                 }
-    //                 total_bytes_read += n;
-    //             }
-    //             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-    //                 // Sleep for a while before trying to read again
-    //                 std::thread::sleep(Duration::from_millis(100));
-    //                 continue;
-    //             }
-    //             Err(e) => return Err(e.into()),
-    //         }
-    //     }
-
-    //     let res = String::from_utf8(buf[..total_bytes_read].to_vec())?;
+    //     let mut buf = [0; 10240];
+    //     let n = stream.read(&mut buf)?;
+    //     let res = String::from_utf8(buf[..n].to_vec())?;
     //     //info!("avalon tcp_query result: {}", res);
     //     return Ok(res);
     // }
-    if is_waiting_write {
-        let mut buf = [0; 10240];
-        let n = stream.read(&mut buf)?;
-        let res = String::from_utf8(buf[..n].to_vec())?;
-        //info!("avalon tcp_query result: {}", res);
-        return Ok(res);
-    }
     return Ok("".to_string());
 }
 
@@ -745,7 +756,7 @@ mod tests {
     #[test]
     fn avalon_tcp_query_account() {
         let _ = *SETUP;
-        let ip = "192.168.187.186";
+        let ip = "192.168.189.212";
         let res = tcp_query_account(ip).unwrap();
         info!("avalon tcp_query_account result: {}", res);
         assert!(true);
@@ -771,9 +782,9 @@ mod tests {
     #[test]
     fn avalon_tcp_query_status() {
         let _ = *SETUP;
-        let ip = "192.168.187.186";
+        let ip = "192.168.189.212";
         let res = tcp_query_status(ip).unwrap();
-        //info!("avalon tcp_query_status result: {}", res);
+        info!("avalon tcp_query_status result: {}", res);
         assert!(true);
     }
 }

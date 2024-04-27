@@ -21,6 +21,9 @@ pub enum MinerError {
     #[error("Read Time Config Error")]
     ReadTimeConfigError,
 
+    #[error("TCP Read Error")]
+    TcpReadError,
+
     #[error(transparent)]
     SQLiteError(#[from] rusqlite::Error),
 
