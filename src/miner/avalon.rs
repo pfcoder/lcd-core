@@ -782,7 +782,7 @@ mod tests {
     #[test]
     fn avalon_tcp_query_status() {
         let _ = *SETUP;
-        let ip = "192.168.189.212";
+        let ip = "192.168.189.210";
         let res = tcp_query_status(ip).unwrap();
         info!("avalon tcp_query_status result: {}", res);
         assert!(true);
