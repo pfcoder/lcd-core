@@ -12,8 +12,9 @@ http = "*"
 lazy_static = "1.4"
 log = "0.4.14"
 log4rs = "1.0"
+ping-rs = "*"
 regex = "*"
-reqwest = {version = "0.12.2", features = ["json"]}
+reqwest = { version = "0.12.2", features = ["json"] }
 rand = "*"
 serde = "*"
 serde_json = "*"

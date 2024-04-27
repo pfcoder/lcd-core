@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Mutex;
+//use std::sync::{Arc};
 use std::{collections::BTreeMap, time::Duration};
 
 use chrono::NaiveTime;
@@ -11,10 +11,6 @@ use serde::{Deserialize, Serialize};
 use crate::{error::MinerError, notify::feishu};
 
 use super::{ant::*, avalon::*, bluestar::*};
-
-lazy_static! {
-    static ref ERR_MAP: Mutex<HashMap<String, i32>> = Mutex::new(HashMap::new());
-}
 
 #[derive(Debug, Clone)]
 pub enum MinerType {
@@ -599,28 +595,28 @@ pub async fn switch_if_need(
 
     if error_ips.len() > 0 {
         // check ERR_MAP, count when matched count > 3, notify
-        let mut err_map = ERR_MAP.lock().unwrap();
-        let mut selected_ips = vec![];
-        for ip in error_ips.iter() {
-            let count = err_map.entry(ip.to_string()).or_insert(0);
-            *count += 1;
-            if *count >= 3 {
-                *count = 0;
-                selected_ips.push(ip.to_string());
-            }
-        }
+        // let mut selected_ips = vec![];
+        // for ip in error_ips.iter() {
+        //     let count = err_map.entry(ip.to_string()).or_insert(0);
+        //     *count += 1;
+        //     if *count >= 3 {
+        //         *count = 0;
+        //         selected_ips.push(ip.to_string());
+        //     }
+        // }
 
-        if selected_ips.len() > 0 {
-            let mut msg = format!(
-                "{} 访问故障: ",
-                chrono::Local::now().format("%H:%M:%S").to_string()
-            );
-            for ip in selected_ips.iter() {
-                msg.push_str(ip);
-            }
-            info!("{}", msg);
-            feishu::notify(&msg).await;
+        //if selected_ips.len() > 0 {
+        let mut msg = format!(
+            "{} 访问故障: ",
+            chrono::Local::now().format("%H:%M:%S").to_string()
+        );
+        //for ip in selected_ips.iter() {
+        for ip in error_ips.iter() {
+            msg.push_str(ip);
         }
+        info!("{}", msg);
+        feishu::notify(&msg).await;
+        //}
     }
 
     info!("end switch action");

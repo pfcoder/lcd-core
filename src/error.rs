@@ -24,6 +24,9 @@ pub enum MinerError {
     #[error("TCP Read Error")]
     TcpReadError,
 
+    #[error("Ping Error")]
+    PingFiledError,
+
     #[error(transparent)]
     SQLiteError(#[from] rusqlite::Error),
 

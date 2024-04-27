@@ -157,78 +157,15 @@ impl MinerOperation for AvalonMiner {
     ) -> AsyncOpType<()> {
         Box::pin(async move {
             // login --> get config --> update config --> reboot
-            info!("avalon start switch account: {}", ip);
-            let mut easy = Easy::new();
-            easy.timeout(Duration::from_secs(5))?;
-            //home(&mut easy, &ip)?;
-            //login(&mut easy, &ip)?;
-            // if fail to get config, try to reboot
-            // try to read current account through tcp
-            let account_result;
-            match tcp_query_account(&ip) {
-                Ok(res) => {
-                    account_result = res;
-                }
-                Err(_) => {
-                    info!("avalon account query error: {}", ip);
-                    return Err(MinerError::ReadAvalonConfigError);
+            match switch_if_need(&ip, &account, is_force) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    info!("avalon switch account error: {:?}", e);
+                    // try to ping
+                    try_ping(&ip)?;
+                    Ok(())
                 }
             }
-            info!("avalon account result: {} {}", ip, account_result);
-            let worker = account_result.split('.').next().unwrap();
-            let config_worker = account.name.split('.').next().unwrap();
-
-            // let config_op = get_config(&mut easy, &ip).or_else(|_| {
-            //     // try to read pools through tcp
-            //     if worker != config_worker {
-            //         // reboot
-            //         tcp_write_reboot(&ip)?;
-            //     } else {
-
-            //     }
-
-            //     // although web access error, but tcp is ok
-            //     return Ok::<Option<AvalonConfig>, MinerError>(None);
-            // })?;
-            // let mut config = AvalonConfig::default();
-            // if let Some(c) = config_op {
-            //     config = c;
-            // } else {
-            //     info!("avalon end switch account config read fail: {}", ip);
-            //     return Ok(());
-            // }
-
-            if !is_force && worker == config_worker
-            // && config.is_same_account(&account)
-            // && config.is_same_mode(&account)
-            {
-                // info!(
-                //     "avalon account and mode not changed: {} current_account:{} switch_account:{}, current_mode: {}, switch_mode: {}",
-                //     ip, worker, account.name, config.mode, account.run_mode
-                // );
-                info!("avalon end switch account no change: {}", ip);
-                return Ok(());
-            }
-            //config.apply_account(&account, &ip);
-            //update_miner_config(&mut easy, &ip, &config)?;
-
-            let ip_splited: Vec<&str> = ip.split('.').collect();
-            let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-            let act = Account {
-                id: 1i32,
-                name: user,
-                password: account.password.clone(),
-                pool1: account.pool1.clone(),
-                pool2: account.pool2.clone(),
-                pool3: account.pool3.clone(),
-                run_mode: account.run_mode.clone(),
-            };
-
-            tcp_write_pool(&ip, &act)?;
-            tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 })?;
-            tcp_write_reboot(&ip)?;
-            info!("avalon end switch account: {}", ip);
-            Ok(())
         })
     }
 
@@ -301,6 +238,38 @@ impl MinerOperation for AvalonMiner {
         update_miner_config(&mut easy, &ip, &conf)?;
         reboot(&mut easy, &ip)
     }
+}
+
+fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), MinerError> {
+    let account_result = tcp_query_account(&ip)?;
+    info!("avalon account result: {} {}", ip, account_result);
+    let worker = account_result.split('.').next().unwrap();
+    let config_worker = account.name.split('.').next().unwrap();
+
+    if !is_force && worker == config_worker
+    // && config.is_same_mode(&account)
+    {
+        info!("avalon end switch account no change: {}", ip);
+        return Ok(());
+    }
+
+    let ip_splited: Vec<&str> = ip.split('.').collect();
+    let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+    let act = Account {
+        id: 1i32,
+        name: user,
+        password: account.password.clone(),
+        pool1: account.pool1.clone(),
+        pool2: account.pool2.clone(),
+        pool3: account.pool3.clone(),
+        run_mode: account.run_mode.clone(),
+    };
+
+    tcp_write_pool(&ip, &act)?;
+    tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 })?;
+    tcp_write_reboot(&ip)?;
+    info!("avalon end switch account: {}", ip);
+    Ok(())
 }
 
 // fn home(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
@@ -655,6 +624,21 @@ fn tcp_write_reboot(ip: &str) -> Result<String, MinerError> {
 // fn tcp_write_pool(ip: &str, cfg: &AvalonConfig) -> Result<String, MinerError> {
 //     tcp_cmd(ip, 4028, "ascset|0,config,0", true) // cgminer-api-config
 // }
+
+fn try_ping(ip: &str) -> Result<bool, MinerError> {
+    let addr = ip.parse().unwrap();
+    let data = [1, 2, 3, 4]; // ping data
+    let timeout = Duration::from_secs(1);
+    let options = ping_rs::PingOptions {
+        ttl: 128,
+        dont_fragment: true,
+    };
+    let result = ping_rs::send_ping(&addr, timeout, &data, Some(&options));
+    match result {
+        Ok(reply) => Ok(true),
+        Err(e) => Err(MinerError::PingFiledError),
+    }
+}
 
 //test
 #[cfg(test)]
