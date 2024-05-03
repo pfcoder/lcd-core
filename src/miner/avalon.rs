@@ -312,7 +312,7 @@ impl MinerOperation for AvalonMiner {
 fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), MinerError> {
     let account_result = tcp_query_account(&ip)?;
     let work = tcp_query_status(&ip)?;
-    info!("avalon account result: {} {}", ip, account_result);
+    //info!("avalon account result: {} {}", ip, account_result);
     let worker = account_result.split('.').next().unwrap();
     let config_worker = account.name.split('.').next().unwrap();
 
@@ -336,7 +336,7 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
     tcp_write_pool(&ip, &act)?;
     tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 })?;
     tcp_write_reboot(&ip)?;
-    info!("avalon end switch account: {}", ip);
+    //info!("avalon end switch account: {}", ip);
     Ok(())
 }
 
@@ -627,7 +627,7 @@ pub fn tcp_query_version(ip: &str) -> Result<String, MinerError> {
 /// query pool
 fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
     let pool = tcp_cmd(ip, 4028, "pools", true)?;
-    info!("avalon tcp_query_account result: {}", pool);
+    //info!("avalon tcp_query_account result: {}", pool);
     // find first User=xxx, extract xxx
     let re = Regex::new(r"User=([^,]+),").unwrap();
     match re.captures(&pool) {
