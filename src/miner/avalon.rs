@@ -339,7 +339,7 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
     let config_worker = account.name.split('.').next().unwrap();
 
     if !is_force && worker == config_worker && work.is_same_work_mode(account) {
-        //info!("avalon end switch account no change: {}", ip);
+        info!("avalon end switch account no change: {}", ip);
         return Ok(());
     }
 
@@ -358,7 +358,7 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
     tcp_write_pool(&ip, &act)?;
     tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 })?;
     tcp_write_reboot(&ip)?;
-    //info!("avalon end switch account: {}", ip);
+    info!("avalon end switch account: {}", ip);
     Ok(())
 }
 
@@ -746,7 +746,7 @@ fn tcp_write_workmode(ip: &str, mode: i32) -> Result<(), MinerError> {
 
 fn tcp_query_status(ip: &str) -> Result<AvalonWorkStatus, MinerError> {
     let res = tcp_cmd(ip, 4028, "estats", true)?;
-    info!("avalon tcp_query_status result: {}", res);
+    //info!("avalon tcp_query_status result: {}", res);
     let mut work: AvalonWorkStatus = AvalonWorkStatus::default();
     // SYSTEMSTATU[Work: In Work, Hash Board: 3 ] ... Elapsed[1697]
     let re = Regex::new(
