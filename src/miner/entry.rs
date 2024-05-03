@@ -9,6 +9,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::miner::avalon;
+use crate::store::db::{self, DB};
 use crate::{error::MinerError, notify::feishu};
 
 use super::{ant::*, avalon::*, bluestar::*};
@@ -101,7 +102,22 @@ pub struct Machine {
     pub run_mode: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct MachineRecord {
+    pub id: i32,
+    pub ip: String,
+    pub machine_type: String,
+    pub work_mode: i32,
+    pub hash_real: f64,
+    pub hash_avg: f64,
+    pub temp_0: f64,
+    pub temp_1: f64,
+    pub temp_2: f64,
+    pub power: i32,
+    pub create_time: i64,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MachineInfo {
     pub ip: String,
     pub machine_type: String,
@@ -110,10 +126,12 @@ pub struct MachineInfo {
     pub temp: String,
     pub fan: String,
     pub elapsed: String,
+    pub mode: String,
     pub pool1: String,
     pub worker1: String,
     pub pool2: String,
     pub worker2: String,
+    pub record: MachineRecord, // for db record
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,7 +247,7 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
     let mut easy = Easy::new();
     easy.url(&ip)?;
     // timeout 5s
-    easy.timeout(Duration::from_secs(3))?;
+    easy.timeout(Duration::from_secs(2))?;
     let mut headers = Vec::new();
     let mut data = Vec::new();
     {
@@ -242,7 +260,13 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
             headers.push(String::from_utf8(header.to_vec()).unwrap());
             true
         })?;
-        transfer.perform()?;
+        match transfer.perform() {
+            Ok(_) => {}
+            Err(_) => {
+                let _ = avalon::tcp_query_version(ip)?;
+                return Ok(MinerType::Avalon(AvalonMiner {}));
+            }
+        }
     }
 
     // catch timeout then try to use tcp connection for avalon
@@ -271,7 +295,10 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
 pub fn scan_miner_detail(ip: String) -> AsyncOpType<MachineInfo> {
     Box::pin(async move {
         let miner = find_miner(&ip)?;
-        miner.query(ip)
+        let machine_info = miner.query(ip)?;
+        // process db record
+        db::insert_machine_record(&machine_info.record)?;
+        Ok(machine_info)
     })
 }
 
@@ -714,10 +741,10 @@ pub async fn watching(
                 machines.push(machine);
             }
             Ok(Err(e)) => {
-                info!("scan_and_update_db error: {:?}", e);
+                info!("watching error: {:?}", e);
             }
             Err(e) => {
-                info!("scan_and_update_db join error: {:?}", e);
+                info!("watching join error: {:?}", e);
             }
         }
     }

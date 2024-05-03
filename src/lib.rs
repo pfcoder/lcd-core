@@ -10,12 +10,14 @@ use store::db::DB;
 use log::info;
 use miner::entry::*;
 
+use crate::store::db;
+
 #[macro_use]
 extern crate lazy_static;
 
-lazy_static! {
-    static ref LCD_DB: Mutex<Option<DB>> = Mutex::new(None);
-}
+// lazy_static! {
+//     static ref LCD_DB: Mutex<Option<DB>> = Mutex::new(None);
+// }
 
 pub struct MinersLibConfig {
     pub app_path: String,
@@ -29,9 +31,10 @@ pub struct MinersLibConfig {
 pub fn init(config: &MinersLibConfig) {
     // init sqlite db
     if config.is_need_db {
-        let mut db = LCD_DB.lock().unwrap();
-        let db_inst = DB::new(&config.app_path).unwrap();
-        *db = Some(db_inst);
+        // let mut db = LCD_DB.lock().unwrap();
+        // let db_inst = DB::new(&config.app_path).unwrap();
+        // *db = Some(db_inst);
+        db::init(&config.app_path);
     }
 
     notify::feishu::init(

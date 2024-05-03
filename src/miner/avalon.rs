@@ -4,7 +4,7 @@ use std::{fmt, time::Duration};
 
 use super::entry::*;
 use crate::error::MinerError;
-use curl::easy::Easy;
+//use curl::easy::Easy;
 use log::info;
 use regex::Regex;
 use serde::de::{self, Deserializer, Visitor};
@@ -205,6 +205,9 @@ impl MinerOperation for AvalonMiner {
 
         let work = tcp_query_status(&ip)?;
         let pools = tcp_query_pool(&ip)?;
+        let power_info = tcp_query_power(&ip)?;
+
+        let temps = work.tavg.split(' ').collect::<Vec<&str>>();
 
         let elapsed_str = format!(
             "{}H {}M {}S",
@@ -214,17 +217,36 @@ impl MinerOperation for AvalonMiner {
         );
 
         Ok(MachineInfo {
-            ip,
+            ip: ip.clone(),
             elapsed: elapsed_str,
             hash_real: format!("{:.2} THS", work.hash_real / 1000.0),
             hash_avg: format!("{:.2} THS", work.hash_avg / 1000.0),
-            machine_type,
+            machine_type: machine_type.clone(),
             temp: work.temp.to_string() + "/" + &work.tavg.replace(" ", "/"),
             fan: "0".to_string(),
             pool1: pools[0].url.clone().replace("stratum+tcp://", ""),
             worker1: pools[0].user.clone(),
             pool2: pools[1].url.clone().replace("stratum+tcp://", ""),
             worker2: pools[1].user.clone(),
+            mode: if work.work_mode == 1 {
+                "高功".to_string()
+            } else {
+                "普通".to_string()
+            },
+            record: MachineRecord {
+                id: 0,
+                ip: ip,
+                machine_type,
+                work_mode: work.work_mode,
+                hash_real: work.hash_real,
+                hash_avg: work.hash_avg,
+                temp_0: temps[0].parse::<f64>().unwrap_or(0.0),
+                temp_1: temps[1].parse::<f64>().unwrap_or(0.0),
+                temp_2: temps[2].parse::<f64>().unwrap_or(0.0),
+                power: power_info.power as i32,
+                // current timestamp
+                create_time: chrono::Local::now().timestamp(),
+            },
         })
     }
 
@@ -317,7 +339,7 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
     let config_worker = account.name.split('.').next().unwrap();
 
     if !is_force && worker == config_worker && work.is_same_work_mode(account) {
-        info!("avalon end switch account no change: {}", ip);
+        //info!("avalon end switch account no change: {}", ip);
         return Ok(());
     }
 
@@ -533,55 +555,53 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
 //     // regular extract target  from ...CGConfCallback({target}}...
 // }
 
-fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
-    // use tcp interface to reboot
-    tcp_write_reboot(ip)?;
-    return Ok(());
+// fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
+// let url = REBOOT_URL.replace("{}", ip);
+// //info!("avalon reboot url: {}", url);
 
-    // let url = REBOOT_URL.replace("{}", ip);
-    // //info!("avalon reboot url: {}", url);
+// easy.url(&url)?;
+// easy.post(true)?;
 
-    // easy.url(&url)?;
-    // easy.post(true)?;
+// let mut list = List::new();
+// list.append("Content-Type: application/x-www-form-urlencoded")?;
+// easy.http_headers(list)?;
 
-    // let mut list = List::new();
-    // list.append("Content-Type: application/x-www-form-urlencoded")?;
-    // easy.http_headers(list)?;
+// let data = "reboot=1";
+// easy.post_fields_copy(data.as_bytes())?;
+// // set timeout to 5s
+// easy.timeout(Duration::from_secs(5))?;
 
-    // let data = "reboot=1";
-    // easy.post_fields_copy(data.as_bytes())?;
-    // // set timeout to 5s
-    // easy.timeout(Duration::from_secs(5))?;
+// match easy.perform() {
+//     Ok(_) => (),
+//     Err(e) => {
+//         //info!("avalon reboot error: {:?}", e);
+//         if e.code() == 28 || e.code() == 56 {
+//             // timeout or connection reset is ok
+//         } else {
+//             return Err(MinerError::CurlError(e));
+//         }
+//     }
+// }
 
-    // match easy.perform() {
-    //     Ok(_) => (),
-    //     Err(e) => {
-    //         //info!("avalon reboot error: {:?}", e);
-    //         if e.code() == 28 || e.code() == 56 {
-    //             // timeout or connection reset is ok
-    //         } else {
-    //             return Err(MinerError::CurlError(e));
-    //         }
-    //     }
-    // }
+// //info!("avalon reboot status: {:?}", easy.response_code()?);
 
-    // //info!("avalon reboot status: {:?}", easy.response_code()?);
-
-    // Ok(())
-}
+// Ok(())
+//}
 
 fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<String, MinerError> {
     let addr = format!("{}:{}", ip, port);
     let addrs = addr.to_socket_addrs()?.next().unwrap();
+    let timeout_connect = Duration::from_secs(2);
+    let timeout_read_write = Duration::from_secs(10);
 
-    let mut stream = std::net::TcpStream::connect_timeout(&addrs, Duration::from_secs(3))?;
-    stream.set_read_timeout(Some(Duration::from_secs(3)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    let mut stream = std::net::TcpStream::connect_timeout(&addrs, timeout_connect)?;
+    // stream.set_read_timeout(Some(timeout_read_write))?;
+    // stream.set_write_timeout(Some(timeout_read_write))?;
     stream.write_all(cmd.as_bytes())?;
     //info!("write done for cmd {}", cmd);
 
     if is_waiting_write {
-        let mut buf = vec![0; 10240];
+        let mut buf = vec![0; 32768];
         let mut total_bytes_read = 0;
         let mut count = 0;
 
@@ -603,7 +623,10 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
                     std::thread::sleep(Duration::from_millis(100));
                     continue;
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    info!("avalon tcp_query error: {:?}", e);
+                    return Err(e.into());
+                }
             }
         }
 
@@ -723,11 +746,11 @@ fn tcp_write_workmode(ip: &str, mode: i32) -> Result<(), MinerError> {
 
 fn tcp_query_status(ip: &str) -> Result<AvalonWorkStatus, MinerError> {
     let res = tcp_cmd(ip, 4028, "estats", true)?;
-    //info!("avalon tcp_query_status result: {}", res);
+    info!("avalon tcp_query_status result: {}", res);
     let mut work: AvalonWorkStatus = AvalonWorkStatus::default();
     // SYSTEMSTATU[Work: In Work, Hash Board: 3 ] ... Elapsed[1697]
     let re = Regex::new(
-        r"SYSTEMSTATU\[Work: (.*),.*Elapsed\[(\d+)\].*Temp\[(\d+)\].*GHSspd\[(\d+\.?\d*)\].**GHSavg\[(\d+\.?\d*)\].*MTavg\[(\d+ \d+ \d+)\].*WORKMODE\[(\d+)\]",
+        r"SYSTEMSTATU\[Work: (.*),.*Elapsed\[(\d+)\].*Temp\[(-?\d+)\].*GHSspd\[(\d+\.?\d*)\].**GHSavg\[(\d+\.?\d*)\].*MTavg\[(-?\d+ -?\d+ -?\d+)\].*WORKMODE\[(\d+)\]",
     )
     .unwrap();
     match re.captures(&res) {
@@ -870,9 +893,9 @@ mod tests {
     async fn avalon_test_reboot() {
         let _ = *SETUP;
         let ip = "192.168.189.207";
-        let mut easy = Easy::new();
-        let res = reboot(&mut easy, ip).unwrap();
-        assert_eq!(res, ());
+        // let mut easy = Easy::new();
+        // let res = reboot(&mut easy, ip).unwrap();
+        // assert_eq!(res, ());
     }
 
     #[tokio::test]
@@ -939,7 +962,7 @@ mod tests {
     #[test]
     fn avalon_tcp_query_status() {
         let _ = *SETUP;
-        let ip = "192.168.189.149";
+        let ip = "192.168.188.22";
         let res = tcp_query_status(ip).unwrap();
         info!("avalon tcp_query_status result: {:?}", res);
         assert!(true);

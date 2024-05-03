@@ -187,17 +187,31 @@ impl MinerOperation for AntMiner {
 
         // construct MachineInfo
         Ok(MachineInfo {
-            ip,
+            ip: ip.clone(),
             elapsed: elapsed_str,
             hash_real: format!("{:.3} GH/s", hash_real),
             hash_avg: format!("{:.3} GH/s", hash_avg),
-            machine_type,
+            machine_type: machine_type.clone(),
             temp: "0".to_string(),
             fan: "0".to_string(),
+            mode: "".to_string(),
             pool1: conf.pools[0].url.clone(),
             worker1: conf.pools[0].user.clone(),
             pool2: conf.pools[1].url.clone(),
             worker2: conf.pools[1].user.clone(),
+            record: MachineRecord {
+                id: 0,
+                ip: ip,
+                machine_type,
+                work_mode: 0,
+                hash_real,
+                hash_avg,
+                temp_0: 0.0,
+                temp_1: 0.0,
+                temp_2: 0.0,
+                power: 0,
+                create_time: chrono::Local::now().timestamp(),
+            },
         })
     }
 
