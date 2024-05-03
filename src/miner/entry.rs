@@ -8,6 +8,7 @@ use curl::easy::Easy;
 use log::info;
 use serde::{Deserialize, Serialize};
 
+use crate::miner::avalon;
 use crate::{error::MinerError, notify::feishu};
 
 use super::{ant::*, avalon::*, bluestar::*};
@@ -244,7 +245,15 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
         transfer.perform()?;
     }
 
-    easy.perform()?;
+    // catch timeout then try to use tcp connection for avalon
+    match easy.perform() {
+        Ok(_) => {}
+        Err(_) => {
+            info!("find miner open web fail, try avalon tcp: {}", ip);
+            let _ = avalon::tcp_query_version(ip)?;
+            return Ok(MinerType::Avalon(AvalonMiner {}));
+        }
+    }
 
     let body = String::from_utf8(data).unwrap();
 

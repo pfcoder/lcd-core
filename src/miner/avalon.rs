@@ -4,18 +4,43 @@ use std::{fmt, time::Duration};
 
 use super::entry::*;
 use crate::error::MinerError;
-use curl::easy::{Easy, List};
+use curl::easy::Easy;
 use log::info;
 use regex::Regex;
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 
-const INFO_URL: &str = "http://{}/updatecgconf.cgi?num=";
-const CONFIG_UPDATE_URL: &str = "http://{}/cgconf.cgi";
-//const LOGIN_URL: &str = "http://{}/login.cgi";
-const REBOOT_URL: &str = "http://{}/reboot.cgi";
-const STATUS_URL: &str = "http://{}/get_home.cgi";
-const MINER_TYPE_URL: &str = "http://{}/get_minerinfo.cgi";
+// const INFO_URL: &str = "http://{}/updatecgconf.cgi?num=";
+// const CONFIG_UPDATE_URL: &str = "http://{}/cgconf.cgi";
+// const LOGIN_URL: &str = "http://{}/login.cgi";
+// const REBOOT_URL: &str = "http://{}/reboot.cgi";
+// const STATUS_URL: &str = "http://{}/get_home.cgi";
+// const MINER_TYPE_URL: &str = "http://{}/get_minerinfo.cgi";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AvalonWorkStatus {
+    pub elapsed: i64,
+    pub hash_real: f64,
+    pub hash_avg: f64,
+    pub temp: f64,
+    pub tavg: String,
+    pub work_status: String,
+    pub work_mode: i32,
+}
+
+impl AvalonWorkStatus {
+    pub fn is_same_work_mode(&self, account: &Account) -> bool {
+        self.work_mode == if account.run_mode == "高功" { 1 } else { 0 }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AvalonPowerStatus {
+    pub control_board_volt: f64,
+    pub hash_board_volt: f64,
+    pub amperage: f64,
+    pub power: f64,
+}
 
 // Avalon config json struct
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -170,85 +195,128 @@ impl MinerOperation for AvalonMiner {
     }
 
     fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
-        let machine_json = query_machine(&ip)?;
-        let miner_json = query_miner_type(&ip)?;
-        let conf = get_config(&mut Easy::new(), &ip)?.unwrap();
+        let versio = tcp_query_version(&ip)?;
+        // extract MODEL=xxx from version
+        let re = Regex::new(r"MODEL=([^,]+),").unwrap();
+        let machine_type = match re.captures(&versio) {
+            Some(caps) => caps.get(1).unwrap().as_str().to_string(),
+            None => "Avalon".to_string(),
+        };
 
-        let machine_type = miner_json["hwtype"].as_str().unwrap_or("unknown");
-        let elapsed = machine_json["elapsed"]
-            .as_str()
-            .unwrap_or("0")
-            .parse::<u64>()
-            .unwrap_or(0);
-        let hash_real = machine_json["hash_5m"]
-            .as_str()
-            .unwrap_or("0")
-            .parse::<f64>()
-            .unwrap_or(0.0);
-        let hash_avg = machine_json["av"]
-            .as_str()
-            .unwrap_or("0")
-            .parse::<f64>()
-            .unwrap_or(0.0);
-        let temp0 = machine_json["temperature"].as_str().unwrap_or("0");
-        let temp1 = machine_json["MTavg1"].as_str().unwrap_or("0");
-        let temp2 = machine_json["MTavg2"].as_str().unwrap_or("0");
-        let temp3 = machine_json["MTavg3"].as_str().unwrap_or("0");
-        // elapsed is seconds, convert to H:M:S
+        let work = tcp_query_status(&ip)?;
+        let pools = tcp_query_pool(&ip)?;
+
         let elapsed_str = format!(
             "{}H {}M {}S",
-            elapsed / 3600,
-            (elapsed % 3600) / 60,
-            elapsed % 60
+            work.elapsed / 3600,
+            (work.elapsed % 3600) / 60,
+            work.elapsed % 60
         );
-
-        let mut pool1 = conf.pool1.clone();
-        let mut pool2 = conf.pool2.clone();
-        if pool1.starts_with("stratum+tcp://") {
-            pool1.drain(..14);
-        }
-        if pool2.starts_with("stratum+tcp://") {
-            pool2.drain(..14);
-        }
 
         Ok(MachineInfo {
             ip,
             elapsed: elapsed_str,
-            hash_real: format!("{:.2} THS", hash_real),
-            hash_avg: format!("{:.2} THS", hash_avg),
-            machine_type: machine_type.to_string(),
-            temp: format!("{}/{}/{}/{}", temp0, temp1, temp2, temp3),
+            hash_real: format!("{:.2} THS", work.hash_real / 1000.0),
+            hash_avg: format!("{:.2} THS", work.hash_avg / 1000.0),
+            machine_type,
+            temp: work.temp.to_string() + "/" + &work.tavg.replace(" ", "/"),
             fan: "0".to_string(),
-            // remote "stratum+tcp://" prefix
-            pool1,
-            worker1: conf.worker1.clone(),
-            pool2,
-            worker2: conf.worker2.clone(),
+            pool1: pools[0].url.clone().replace("stratum+tcp://", ""),
+            worker1: pools[0].user.clone(),
+            pool2: pools[1].url.clone().replace("stratum+tcp://", ""),
+            worker2: pools[1].user.clone(),
         })
     }
 
+    // fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
+    //     let machine_json = query_machine(&ip)?;
+    //     let miner_json = query_miner_type(&ip)?;
+    //     let conf = get_config(&mut Easy::new(), &ip)?.unwrap();
+
+    //     let machine_type = miner_json["hwtype"].as_str().unwrap_or("unknown");
+    //     let elapsed = machine_json["elapsed"]
+    //         .as_str()
+    //         .unwrap_or("0")
+    //         .parse::<u64>()
+    //         .unwrap_or(0);
+    //     let hash_real = machine_json["hash_5m"]
+    //         .as_str()
+    //         .unwrap_or("0")
+    //         .parse::<f64>()
+    //         .unwrap_or(0.0);
+    //     let hash_avg = machine_json["av"]
+    //         .as_str()
+    //         .unwrap_or("0")
+    //         .parse::<f64>()
+    //         .unwrap_or(0.0);
+    //     let temp0 = machine_json["temperature"].as_str().unwrap_or("0");
+    //     let temp1 = machine_json["MTavg1"].as_str().unwrap_or("0");
+    //     let temp2 = machine_json["MTavg2"].as_str().unwrap_or("0");
+    //     let temp3 = machine_json["MTavg3"].as_str().unwrap_or("0");
+    //     // elapsed is seconds, convert to H:M:S
+    //     let elapsed_str = format!(
+    //         "{}H {}M {}S",
+    //         elapsed / 3600,
+    //         (elapsed % 3600) / 60,
+    //         elapsed % 60
+    //     );
+
+    //     let mut pool1 = conf.pool1.clone();
+    //     let mut pool2 = conf.pool2.clone();
+    //     if pool1.starts_with("stratum+tcp://") {
+    //         pool1.drain(..14);
+    //     }
+    //     if pool2.starts_with("stratum+tcp://") {
+    //         pool2.drain(..14);
+    //     }
+
+    //     Ok(MachineInfo {
+    //         ip,
+    //         elapsed: elapsed_str,
+    //         hash_real: format!("{:.2} THS", hash_real),
+    //         hash_avg: format!("{:.2} THS", hash_avg),
+    //         machine_type: machine_type.to_string(),
+    //         temp: format!("{}/{}/{}/{}", temp0, temp1, temp2, temp3),
+    //         fan: "0".to_string(),
+    //         // remote "stratum+tcp://" prefix
+    //         pool1,
+    //         worker1: conf.worker1.clone(),
+    //         pool2,
+    //         worker2: conf.worker2.clone(),
+    //     })
+    // }
+
     fn reboot(&self, ip: String) -> Result<(), MinerError> {
-        Ok(reboot(&mut Easy::new(), &ip)?)
+        tcp_write_reboot(&ip)
     }
 
     fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
-        let mut easy = Easy::new();
-        let mut conf = get_config(&mut easy, &ip)?.unwrap();
-        conf.apply_pool_config(pools, &ip);
-        update_miner_config(&mut easy, &ip, &conf)?;
-        reboot(&mut easy, &ip)
+        // let mut easy = Easy::new();
+        // let mut conf = get_config(&mut easy, &ip)?.unwrap();
+        // conf.apply_pool_config(pools, &ip);
+        // update_miner_config(&mut easy, &ip, &conf)?;
+        // reboot(&mut easy, &ip)
+        let ip_splited: Vec<&str> = ip.split('.').collect();
+        let pool_prefix = "stratum+tcp://";
+
+        let mut update_pools = pools.clone();
+        for pool in update_pools.iter_mut() {
+            pool.url = pool_prefix.to_string() + &pool.url;
+            pool.user = pool.user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+        }
+        tcp_write_pool_config(&ip, update_pools)?;
+        tcp_write_reboot(&ip)
     }
 }
 
 fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), MinerError> {
     let account_result = tcp_query_account(&ip)?;
+    let work = tcp_query_status(&ip)?;
     info!("avalon account result: {} {}", ip, account_result);
     let worker = account_result.split('.').next().unwrap();
     let config_worker = account.name.split('.').next().unwrap();
 
-    if !is_force && worker == config_worker
-    // && config.is_same_mode(&account)
-    {
+    if !is_force && worker == config_worker && work.is_same_work_mode(account) {
         info!("avalon end switch account no change: {}", ip);
         return Ok(());
     }
@@ -334,172 +402,172 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
 //     Ok(())
 // }
 
-fn query_miner_type(ip: &str) -> Result<serde_json::Value, MinerError> {
-    let url = MINER_TYPE_URL.replace("{}", ip);
-    //info!("avalon query_minet_type url: {}", url);
+// fn query_miner_type(ip: &str) -> Result<serde_json::Value, MinerError> {
+//     let url = MINER_TYPE_URL.replace("{}", ip);
+//     //info!("avalon query_minet_type url: {}", url);
 
-    let mut easy = Easy::new();
-    easy.url(&url)?;
-    easy.post(false)?;
-    let mut data = Vec::new();
-    {
-        let mut transfer = easy.transfer();
-        transfer.write_function(|new_data| {
-            data.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
-    }
-    easy.perform()?;
-    let body = String::from_utf8(data).unwrap();
+//     let mut easy = Easy::new();
+//     easy.url(&url)?;
+//     easy.post(false)?;
+//     let mut data = Vec::new();
+//     {
+//         let mut transfer = easy.transfer();
+//         transfer.write_function(|new_data| {
+//             data.extend_from_slice(new_data);
+//             Ok(new_data.len())
+//         })?;
+//         transfer.perform()?;
+//     }
+//     easy.perform()?;
+//     let body = String::from_utf8(data).unwrap();
 
-    let re = Regex::new(r"minerinfoCallback\((\{.*\})\)").unwrap();
-    match re.captures(&body) {
-        Some(caps) => {
-            let target = caps.get(1).unwrap().as_str();
-            // convert to json
-            let json: serde_json::Value = serde_json::from_str(target)?;
-            //info!("avalon query_minet_type result: {:?}", json);
-            Ok(json)
-        }
-        None => Err(MinerError::ReadAvalonConfigError),
-    }
-}
+//     let re = Regex::new(r"minerinfoCallback\((\{.*\})\)").unwrap();
+//     match re.captures(&body) {
+//         Some(caps) => {
+//             let target = caps.get(1).unwrap().as_str();
+//             // convert to json
+//             let json: serde_json::Value = serde_json::from_str(target)?;
+//             //info!("avalon query_minet_type result: {:?}", json);
+//             Ok(json)
+//         }
+//         None => Err(MinerError::ReadAvalonConfigError),
+//     }
+// }
 
-fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
-    let url = STATUS_URL.replace("{}", ip);
-    //info!("avalon query_machine url: {}", url);
+// fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
+//     let url = STATUS_URL.replace("{}", ip);
+//     //info!("avalon query_machine url: {}", url);
 
-    let mut easy = Easy::new();
-    easy.url(&url)?;
-    easy.post(false)?;
-    let mut data = Vec::new();
-    {
-        let mut transfer = easy.transfer();
-        transfer.write_function(|new_data| {
-            data.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
-    }
-    easy.perform()?;
-    let body = String::from_utf8(data).unwrap();
+//     let mut easy = Easy::new();
+//     easy.url(&url)?;
+//     easy.post(false)?;
+//     let mut data = Vec::new();
+//     {
+//         let mut transfer = easy.transfer();
+//         transfer.write_function(|new_data| {
+//             data.extend_from_slice(new_data);
+//             Ok(new_data.len())
+//         })?;
+//         transfer.perform()?;
+//     }
+//     easy.perform()?;
+//     let body = String::from_utf8(data).unwrap();
 
-    let re = Regex::new(r"homeCallback\((\{.*?\})\)").unwrap();
-    match re.captures(&body) {
-        Some(caps) => {
-            let target = caps.get(1).unwrap().as_str();
-            //info!("target: {}", target);
-            // convert to json
-            let json: serde_json::Value = serde_json::from_str(target)?;
-            //info!("avalon query_machine result: {:?}", json);
-            Ok(json)
-        }
-        None => Err(MinerError::ReadAvalonConfigError),
-    }
-}
+//     let re = Regex::new(r"homeCallback\((\{.*?\})\)").unwrap();
+//     match re.captures(&body) {
+//         Some(caps) => {
+//             let target = caps.get(1).unwrap().as_str();
+//             //info!("target: {}", target);
+//             // convert to json
+//             let json: serde_json::Value = serde_json::from_str(target)?;
+//             //info!("avalon query_machine result: {:?}", json);
+//             Ok(json)
+//         }
+//         None => Err(MinerError::ReadAvalonConfigError),
+//     }
+// }
 
-fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerError> {
-    let url = INFO_URL.replace("{}", ip) + rand::random::<u64>().to_string().as_str();
-    //info!("avalon get_config url: {}", url);
+// fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerError> {
+//     let url = INFO_URL.replace("{}", ip) + rand::random::<u64>().to_string().as_str();
+//     //info!("avalon get_config url: {}", url);
 
-    easy.url(&url)?;
-    easy.post(false)?;
-    let mut data = Vec::new();
-    {
-        let mut transfer = easy.transfer();
-        transfer.write_function(|new_data| {
-            data.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
-    }
-    easy.perform()?;
-    let body = String::from_utf8(data).unwrap();
+//     easy.url(&url)?;
+//     easy.post(false)?;
+//     let mut data = Vec::new();
+//     {
+//         let mut transfer = easy.transfer();
+//         transfer.write_function(|new_data| {
+//             data.extend_from_slice(new_data);
+//             Ok(new_data.len())
+//         })?;
+//         transfer.perform()?;
+//     }
+//     easy.perform()?;
+//     let body = String::from_utf8(data).unwrap();
 
-    let re = Regex::new(r"CGConfCallback\((\{.*\})\)").unwrap();
-    match re.captures(&body) {
-        Some(caps) => {
-            let target = caps.get(1).unwrap().as_str();
-            // convert to json
-            let config: AvalonConfig = serde_json::from_str(target)?;
-            //info!("avalon get_config result: {:?}", config);
-            Ok(Some(config))
-        }
-        None => Err(MinerError::ReadAvalonConfigError),
-    }
-}
+//     let re = Regex::new(r"CGConfCallback\((\{.*\})\)").unwrap();
+//     match re.captures(&body) {
+//         Some(caps) => {
+//             let target = caps.get(1).unwrap().as_str();
+//             // convert to json
+//             let config: AvalonConfig = serde_json::from_str(target)?;
+//             //info!("avalon get_config result: {:?}", config);
+//             Ok(Some(config))
+//         }
+//         None => Err(MinerError::ReadAvalonConfigError),
+//     }
+// }
 
-fn update_miner_config(easy: &mut Easy, ip: &str, conf: &AvalonConfig) -> Result<(), MinerError> {
-    // post conf as www-form-urlencoded
-    let url = CONFIG_UPDATE_URL.replace("{}", ip); // + rand::random::<u64>().to_string().as_str();
-                                                   //info!("avalon update_miner_config url: {}", url);
+// fn update_miner_config(easy: &mut Easy, ip: &str, conf: &AvalonConfig) -> Result<(), MinerError> {
+//     // post conf as www-form-urlencoded
+//     let url = CONFIG_UPDATE_URL.replace("{}", ip); // + rand::random::<u64>().to_string().as_str();
+//                                                    //info!("avalon update_miner_config url: {}", url);
 
-    easy.url(&url)?;
-    easy.post(true)?;
+//     easy.url(&url)?;
+//     easy.post(true)?;
 
-    let mut list = List::new();
-    list.append("Content-Type: application/x-www-form-urlencoded")?;
-    easy.http_headers(list)?;
+//     let mut list = List::new();
+//     list.append("Content-Type: application/x-www-form-urlencoded")?;
+//     easy.http_headers(list)?;
 
-    let data = conf.to_form_string()?;
-    easy.post_fields_copy(data.as_bytes())?;
+//     let data = conf.to_form_string()?;
+//     easy.post_fields_copy(data.as_bytes())?;
 
-    let mut response_body = Vec::new();
-    {
-        let mut transfer = easy.transfer();
-        transfer.write_function(|new_data| {
-            response_body.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
-    }
+//     let mut response_body = Vec::new();
+//     {
+//         let mut transfer = easy.transfer();
+//         transfer.write_function(|new_data| {
+//             response_body.extend_from_slice(new_data);
+//             Ok(new_data.len())
+//         })?;
+//         transfer.perform()?;
+//     }
 
-    easy.perform()?;
+//     easy.perform()?;
 
-    //info!("avalon update config result: {:?}", easy.response_code()?);
-    // log out body
-    let _body = String::from_utf8(response_body)?;
+//     //info!("avalon update config result: {:?}", easy.response_code()?);
+//     // log out body
+//     let _body = String::from_utf8(response_body)?;
 
-    Ok(())
-    // regular extract target  from ...CGConfCallback({target}}...
-}
+//     Ok(())
+//     // regular extract target  from ...CGConfCallback({target}}...
+// }
 
 fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
     // use tcp interface to reboot
     tcp_write_reboot(ip)?;
     return Ok(());
 
-    let url = REBOOT_URL.replace("{}", ip);
-    //info!("avalon reboot url: {}", url);
+    // let url = REBOOT_URL.replace("{}", ip);
+    // //info!("avalon reboot url: {}", url);
 
-    easy.url(&url)?;
-    easy.post(true)?;
+    // easy.url(&url)?;
+    // easy.post(true)?;
 
-    let mut list = List::new();
-    list.append("Content-Type: application/x-www-form-urlencoded")?;
-    easy.http_headers(list)?;
+    // let mut list = List::new();
+    // list.append("Content-Type: application/x-www-form-urlencoded")?;
+    // easy.http_headers(list)?;
 
-    let data = "reboot=1";
-    easy.post_fields_copy(data.as_bytes())?;
-    // set timeout to 5s
-    easy.timeout(Duration::from_secs(5))?;
+    // let data = "reboot=1";
+    // easy.post_fields_copy(data.as_bytes())?;
+    // // set timeout to 5s
+    // easy.timeout(Duration::from_secs(5))?;
 
-    match easy.perform() {
-        Ok(_) => (),
-        Err(e) => {
-            //info!("avalon reboot error: {:?}", e);
-            if e.code() == 28 || e.code() == 56 {
-                // timeout or connection reset is ok
-            } else {
-                return Err(MinerError::CurlError(e));
-            }
-        }
-    }
+    // match easy.perform() {
+    //     Ok(_) => (),
+    //     Err(e) => {
+    //         //info!("avalon reboot error: {:?}", e);
+    //         if e.code() == 28 || e.code() == 56 {
+    //             // timeout or connection reset is ok
+    //         } else {
+    //             return Err(MinerError::CurlError(e));
+    //         }
+    //     }
+    // }
 
-    //info!("avalon reboot status: {:?}", easy.response_code()?);
+    // //info!("avalon reboot status: {:?}", easy.response_code()?);
 
-    Ok(())
+    // Ok(())
 }
 
 fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<String, MinerError> {
@@ -547,26 +615,19 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
 
         return Err(MinerError::TcpReadError);
     }
-    // single read
-    // if is_waiting_write {
-    //     let mut buf = [0; 10240];
-    //     let n = stream.read(&mut buf)?;
-    //     let res = String::from_utf8(buf[..n].to_vec())?;
-    //     //info!("avalon tcp_query result: {}", res);
-    //     return Ok(res);
-    // }
+
     return Ok("".to_string());
 }
 
 /// query version
-fn tcp_query_version(ip: &str) -> Result<String, MinerError> {
+pub fn tcp_query_version(ip: &str) -> Result<String, MinerError> {
     tcp_cmd(ip, 4028, "version", true)
 }
 
 /// query pool
 fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
     let pool = tcp_cmd(ip, 4028, "pools", true)?;
-    //info!("avalon tcp_query_account result: {}", pool);
+    info!("avalon tcp_query_account result: {}", pool);
     // find first User=xxx, extract xxx
     let re = Regex::new(r"User=([^,]+),").unwrap();
     match re.captures(&pool) {
@@ -577,6 +638,24 @@ fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
         }
         None => Err(MinerError::ReadAvalonConfigError),
     }
+}
+
+fn tcp_query_pool(ip: &str) -> Result<Vec<PoolConfig>, MinerError> {
+    let res = tcp_cmd(ip, 4028, "pools", true)?;
+    //info!("avalon tcp_query_pool result: {}", pool);
+    // extract pool info
+    let re = Regex::new(r"POOL=\d+,URL=([^,]+),.*?User=([^,]+),").unwrap();
+    let mut pools = Vec::new();
+    for cap in re.captures_iter(&res) {
+        let pool = PoolConfig {
+            url: cap.get(1).unwrap().as_str().to_string(),
+            user: cap.get(2).unwrap().as_str().to_string(),
+            password: "".to_string(),
+        };
+        pools.push(pool);
+    }
+
+    Ok(pools)
 }
 
 /// update pool
@@ -604,6 +683,37 @@ fn tcp_write_pool(ip: &str, pool: &Account) -> Result<(), MinerError> {
     Ok(())
 }
 
+fn tcp_write_pool_config(ip: &str, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
+    // ascset|0,setpool,root,root,2,stratum+tcp://btc.ss.poolin.com:443,cctrix.001,123
+    // let pool1 = format!(
+    //     "ascset|0,setpool,root,root,0,{},{},{}",
+    //     pool.pool1, pool.name, pool.password
+    // );
+
+    // let pool2 = format!(
+    //     "ascset|0,setpool,root,root,1,{},{},{}",
+    //     pool.pool2, pool.name, pool.password
+    // );
+
+    // let pool3 = format!(
+    //     "ascset|0,setpool,root,root,2,{},{},{}",
+    //     pool.pool3, pool.name, pool.password
+    // );
+
+    // tcp_cmd(ip, 4028, &pool1, true)?;
+    // tcp_cmd(ip, 4028, &pool2, true)?;
+    // tcp_cmd(ip, 4028, &pool3, true)?;
+    for (i, pool) in pools.iter().enumerate() {
+        let cmd = format!(
+            "ascset|0,setpool,root,root,{},{},{},{}",
+            i, pool.url, pool.user, pool.password
+        );
+        tcp_cmd(ip, 4028, &cmd, true)?;
+    }
+
+    Ok(())
+}
+
 fn tcp_write_workmode(ip: &str, mode: i32) -> Result<(), MinerError> {
     // ascset|0,workmode,1
     let cmd = format!("ascset|0,workmode,{}", mode);
@@ -611,19 +721,72 @@ fn tcp_write_workmode(ip: &str, mode: i32) -> Result<(), MinerError> {
     Ok(())
 }
 
-fn tcp_query_status(ip: &str) -> Result<String, MinerError> {
-    tcp_cmd(ip, 4028, "estats", true)
+fn tcp_query_status(ip: &str) -> Result<AvalonWorkStatus, MinerError> {
+    let res = tcp_cmd(ip, 4028, "estats", true)?;
+    //info!("avalon tcp_query_status result: {}", res);
+    let mut work: AvalonWorkStatus = AvalonWorkStatus::default();
+    // SYSTEMSTATU[Work: In Work, Hash Board: 3 ] ... Elapsed[1697]
+    let re = Regex::new(
+        r"SYSTEMSTATU\[Work: (.*),.*Elapsed\[(\d+)\].*Temp\[(\d+)\].*GHSspd\[(\d+\.?\d*)\].**GHSavg\[(\d+\.?\d*)\].*MTavg\[(\d+ \d+ \d+)\].*WORKMODE\[(\d+)\]",
+    )
+    .unwrap();
+    match re.captures(&res) {
+        Some(caps) => {
+            work.work_status = caps.get(1).map_or("", |m| m.as_str()).to_string();
+            work.elapsed = caps
+                .get(2)
+                .map_or(0, |m| m.as_str().parse::<i64>().unwrap());
+            work.temp = caps
+                .get(3)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+            work.hash_real = caps
+                .get(4)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+            work.hash_avg = caps
+                .get(5)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+            work.tavg = caps.get(6).map_or("", |m| m.as_str()).to_string();
+            work.work_mode = caps
+                .get(7)
+                .map_or(0, |m| m.as_str().parse::<i32>().unwrap());
+        }
+        None => return Err(MinerError::ReadAvalonConfigError),
+    }
+
+    Ok(work)
+}
+
+fn tcp_query_power(ip: &str) -> Result<AvalonPowerStatus, MinerError> {
+    let res = tcp_cmd(ip, 4028, "ascset|0,hashpower", true)?;
+    let mut power = AvalonPowerStatus::default();
+    // extract PS[0 1196 1284 230 2953 1284] from res
+    let re = Regex::new(r"PS\[(\d+) (\d+) (\d+) (\d+) (\d+) (\d+)\]").unwrap();
+    match re.captures(&res) {
+        Some(caps) => {
+            power.control_board_volt = caps
+                .get(2)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+            power.hash_board_volt = caps
+                .get(3)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+            power.amperage = caps
+                .get(4)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+            power.power = caps
+                .get(5)
+                .map_or(0.0, |m| m.as_str().parse::<f64>().unwrap());
+        }
+        None => return Err(MinerError::ReadAvalonConfigError),
+    }
+
+    Ok(power)
 }
 
 /// reboot machine
-fn tcp_write_reboot(ip: &str) -> Result<String, MinerError> {
-    tcp_cmd(ip, 4028, "ascset|0,reboot,0", false) // cgminer-api-restart
+fn tcp_write_reboot(ip: &str) -> Result<(), MinerError> {
+    tcp_cmd(ip, 4028, "ascset|0,reboot,0", false)?; // cgminer-api-restart
+    Ok(())
 }
-
-/// config pool
-// fn tcp_write_pool(ip: &str, cfg: &AvalonConfig) -> Result<String, MinerError> {
-//     tcp_cmd(ip, 4028, "ascset|0,config,0", true) // cgminer-api-config
-// }
 
 fn try_ping(ip: &str) -> Result<bool, MinerError> {
     let addr = ip.parse().unwrap();
@@ -657,9 +820,9 @@ mod tests {
     async fn avalon_test_get_config() {
         let _ = *SETUP;
         let ip = "192.168.187.170";
-        let mut easy = Easy::new();
-        let config = get_config(&mut easy, ip).unwrap().unwrap();
-        assert_eq!(config.mode, 1);
+        // let mut easy = Easy::new();
+        // let config = get_config(&mut easy, ip).unwrap().unwrap();
+        // assert_eq!(config.mode, 1);
     }
 
     #[tokio::test]
@@ -726,6 +889,7 @@ mod tests {
         let _ = *SETUP;
         let ip = "192.168.187.186";
         let res = tcp_query_version(ip).unwrap();
+        info!("avalon tcp_query_version result: {}", res);
         assert!(res.contains("STATUS"));
     }
 
@@ -743,6 +907,15 @@ mod tests {
         let ip = "192.168.189.212";
         let res = tcp_query_account(ip).unwrap();
         info!("avalon tcp_query_account result: {}", res);
+        assert!(true);
+    }
+
+    #[test]
+    fn avalon_tcp_query_pool() {
+        let _ = *SETUP;
+        let ip = "192.168.189.212";
+        let res = tcp_query_pool(ip).unwrap();
+        info!("avalon tcp_query_pool result: {:?}", res);
         assert!(true);
     }
 
@@ -766,9 +939,18 @@ mod tests {
     #[test]
     fn avalon_tcp_query_status() {
         let _ = *SETUP;
-        let ip = "192.168.189.210";
+        let ip = "192.168.189.149";
         let res = tcp_query_status(ip).unwrap();
-        info!("avalon tcp_query_status result: {}", res);
+        info!("avalon tcp_query_status result: {:?}", res);
+        assert!(true);
+    }
+
+    #[test]
+    fn avalon_tcp_query_power() {
+        let _ = *SETUP;
+        let ip = "192.168.189.170";
+        let res = tcp_query_power(ip).unwrap();
+        info!("avalon tcp_query_power result: {:?}", res);
         assert!(true);
     }
 }
