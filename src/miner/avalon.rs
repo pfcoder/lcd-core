@@ -100,57 +100,57 @@ where
     deserializer.deserialize_any(StringOrInt)
 }
 
-impl AvalonConfig {
-    pub fn to_form_string(&self) -> Result<String, MinerError> {
-        serde_urlencoded::to_string(self).map_err(|err| MinerError::from(err))
-    }
+// impl AvalonConfig {
+//     pub fn to_form_string(&self) -> Result<String, MinerError> {
+//         serde_urlencoded::to_string(self).map_err(|err| MinerError::from(err))
+//     }
 
-    pub fn apply_account(&mut self, account: &Account, ip: &str) {
-        let ip_splited: Vec<&str> = ip.split('.').collect();
-        let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-        self.pool1 = account.pool1.clone();
-        self.worker1 = user.clone();
-        self.passwd1 = account.password.clone();
-        self.pool2 = account.pool2.clone();
-        self.worker2 = user.clone();
-        self.passwd2 = account.password.clone();
-        self.pool3 = account.pool3.clone();
-        self.worker3 = user.clone();
-        self.passwd3 = account.password.clone();
-        self.mode = if account.run_mode == "高功" { 1 } else { 0 };
-    }
+//     pub fn apply_account(&mut self, account: &Account, ip: &str) {
+//         let ip_splited: Vec<&str> = ip.split('.').collect();
+//         let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+//         self.pool1 = account.pool1.clone();
+//         self.worker1 = user.clone();
+//         self.passwd1 = account.password.clone();
+//         self.pool2 = account.pool2.clone();
+//         self.worker2 = user.clone();
+//         self.passwd2 = account.password.clone();
+//         self.pool3 = account.pool3.clone();
+//         self.worker3 = user.clone();
+//         self.passwd3 = account.password.clone();
+//         self.mode = if account.run_mode == "高功" { 1 } else { 0 };
+//     }
 
-    pub fn is_same_account(&self, account: &Account) -> bool {
-        // check string before .
-        let worker1_splited: Vec<&str> = self.worker1.split('.').collect();
-        let account_name_splited: Vec<&str> = account.name.split('.').collect();
-        worker1_splited[0] == account_name_splited[0]
-    }
+//     pub fn is_same_account(&self, account: &Account) -> bool {
+//         // check string before .
+//         let worker1_splited: Vec<&str> = self.worker1.split('.').collect();
+//         let account_name_splited: Vec<&str> = account.name.split('.').collect();
+//         worker1_splited[0] == account_name_splited[0]
+//     }
 
-    pub fn is_same_mode(&self, account: &Account) -> bool {
-        self.mode == if account.run_mode == "高功" { 1 } else { 0 }
-    }
+//     pub fn is_same_mode(&self, account: &Account) -> bool {
+//         self.mode == if account.run_mode == "高功" { 1 } else { 0 }
+//     }
 
-    pub fn apply_pool_config(&mut self, pools: Vec<PoolConfig>, ip: &str) {
-        let ip_splited: Vec<&str> = ip.split('.').collect();
-        let pool_prefix = "stratum+tcp://";
-        if pools.len() > 0 {
-            self.pool1 = format!("{}{}", pool_prefix, pools[0].url);
-            self.worker1 = pools[0].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-            self.passwd1 = pools[0].password.clone();
-        }
-        if pools.len() > 1 {
-            self.pool2 = format!("{}{}", pool_prefix, pools[1].url);
-            self.worker2 = pools[1].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-            self.passwd2 = pools[1].password.clone();
-        }
-        if pools.len() > 2 {
-            self.pool3 = format!("{}{}", pool_prefix, pools[2].url);
-            self.worker3 = pools[2].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-            self.passwd3 = pools[2].password.clone();
-        }
-    }
-}
+//     pub fn apply_pool_config(&mut self, pools: Vec<PoolConfig>, ip: &str) {
+//         let ip_splited: Vec<&str> = ip.split('.').collect();
+//         let pool_prefix = "stratum+tcp://";
+//         if pools.len() > 0 {
+//             self.pool1 = format!("{}{}", pool_prefix, pools[0].url);
+//             self.worker1 = pools[0].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+//             self.passwd1 = pools[0].password.clone();
+//         }
+//         if pools.len() > 1 {
+//             self.pool2 = format!("{}{}", pool_prefix, pools[1].url);
+//             self.worker2 = pools[1].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+//             self.passwd2 = pools[1].password.clone();
+//         }
+//         if pools.len() > 2 {
+//             self.pool3 = format!("{}{}", pool_prefix, pools[2].url);
+//             self.worker3 = pools[2].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+//             self.passwd3 = pools[2].password.clone();
+//         }
+//     }
+// }
 
 /// Avalon miner
 #[derive(Debug, Clone)]
@@ -592,11 +592,11 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
     let addr = format!("{}:{}", ip, port);
     let addrs = addr.to_socket_addrs()?.next().unwrap();
     let timeout_connect = Duration::from_secs(2);
-    let timeout_read_write = Duration::from_secs(10);
+    let timeout_read_write = Duration::from_secs(5);
 
     let mut stream = std::net::TcpStream::connect_timeout(&addrs, timeout_connect)?;
-    // stream.set_read_timeout(Some(timeout_read_write))?;
-    // stream.set_write_timeout(Some(timeout_read_write))?;
+    stream.set_read_timeout(Some(timeout_read_write))?;
+    stream.set_write_timeout(Some(timeout_read_write))?;
     stream.write_all(cmd.as_bytes())?;
     //info!("write done for cmd {}", cmd);
 
@@ -821,8 +821,8 @@ fn try_ping(ip: &str) -> Result<bool, MinerError> {
     };
     let result = ping_rs::send_ping(&addr, timeout, &data, Some(&options));
     match result {
-        Ok(reply) => Ok(true),
-        Err(e) => Err(MinerError::PingFiledError),
+        Ok(_reply) => Ok(true),
+        Err(_e) => Err(MinerError::PingFiledError),
     }
 }
 

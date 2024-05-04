@@ -9,7 +9,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::miner::avalon;
-use crate::store::db::{self, DB};
+use crate::store::db::{self};
 use crate::{error::MinerError, notify::feishu};
 
 use super::{ant::*, avalon::*, bluestar::*};

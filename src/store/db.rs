@@ -14,7 +14,6 @@ lazy_static! {
 /// Sqlite DB
 pub struct DB {
     conn: Connection,
-    db_path: String,
 }
 
 impl DB {
@@ -47,7 +46,7 @@ impl DB {
             [],
         )?;
 
-        Ok(Self { conn, db_path })
+        Ok(Self { conn })
     }
 
     pub fn insert_machine_record(&self, machine: &MachineRecord) -> Result<i32, MinerError> {
@@ -75,16 +74,22 @@ impl DB {
 
     pub fn query_machine_records_by_time(
         &self,
+        ip: String,
         start_time: i64,
         end_time: i64,
     ) -> Result<Vec<MachineRecord>, MinerError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, ip, machine_type, work_mode, hash_real, hash_avg, temp_0, temp_1, temp_2, power, create_time
                   FROM t_machine_record
-                  WHERE create_time >= ?1 AND create_time <= ?2",
+                  WHERE ip == ?1 AND create_time >= ?2 AND create_time <= ?3",
         )?;
 
-        let rows = stmt.query_map(params![start_time, end_time], |row| {
+        info!(
+            "query machine records by time: {} {} {}",
+            ip, start_time, end_time
+        );
+
+        let rows = stmt.query_map(params![ip, start_time, end_time], |row| {
             Ok(MachineRecord {
                 id: row.get(0)?,
                 ip: row.get(1)?,
@@ -105,7 +110,18 @@ impl DB {
             machines.push(machine?);
         }
 
+        info!("query machine records by time: {:?}", machines.len());
         Ok(machines)
+    }
+
+    // clear specified records before specified time
+    pub fn clear_records_before_time(&self, time: i64) -> Result<(), MinerError> {
+        self.conn.execute(
+            "DELETE FROM t_machine_record WHERE create_time < ?2",
+            params![time],
+        )?;
+
+        Ok(())
     }
 }
 
@@ -128,12 +144,15 @@ fn get_db_path(app_path: &str) -> String {
     app_path.to_owned() + "/db/lcd.sqlite"
 }
 
-pub fn init(app_path: &str) {
+pub fn init(app_path: &str, data_keep_days: i64) {
     let mut db = LCD_DB.lock().unwrap();
     let db_inst = DB::new(app_path).unwrap();
     *db = Some(db_inst);
 
     info!("lcd db initialized.");
+    // try to clear old data
+    let now = chrono::Local::now().timestamp();
+    clear_records_before_time(now - data_keep_days * 24 * 3600).unwrap();
 }
 
 pub fn insert_machine_record(machine: &MachineRecord) -> Result<i32, MinerError> {
@@ -141,5 +160,25 @@ pub fn insert_machine_record(machine: &MachineRecord) -> Result<i32, MinerError>
     match &*db {
         Some(db) => db.insert_machine_record(machine),
         None => Ok(-1),
+    }
+}
+
+pub fn query_records_by_time(
+    ip: String,
+    start_time: i64,
+    end_time: i64,
+) -> Result<Vec<MachineRecord>, MinerError> {
+    let db = LCD_DB.lock().unwrap();
+    match &*db {
+        Some(db) => db.query_machine_records_by_time(ip, start_time, end_time),
+        None => Ok(Vec::new()),
+    }
+}
+
+pub fn clear_records_before_time(time: i64) -> Result<(), MinerError> {
+    let db = LCD_DB.lock().unwrap();
+    match &*db {
+        Some(db) => db.clear_records_before_time(time),
+        None => Ok(()),
     }
 }

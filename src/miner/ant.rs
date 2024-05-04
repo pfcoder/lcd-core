@@ -3,7 +3,7 @@ use std::time::Duration;
 use super::entry::*;
 use crate::error::MinerError;
 use curl::easy::{Easy, List};
-use log::info;
+//use log::info;
 use serde::{Deserialize, Serialize};
 
 // some const str define
@@ -329,7 +329,7 @@ fn update_conf(ip: &str, conf: &AntConfig) -> Result<(), MinerError> {
 
     easy.perform()?;
 
-    let body = String::from_utf8(response_body)?;
+    let _body = String::from_utf8(response_body)?;
 
     //info!("ant update conf: {}", body);
     Ok(())
@@ -365,7 +365,7 @@ fn reboot(ip: &str) -> Result<(), MinerError> {
 
     match easy.perform() {
         Ok(_) => (),
-        Err(e) => {
+        Err(_e) => {
             //info!("ant reboot error: {:?}", e);
         }
     }
@@ -379,6 +379,7 @@ fn reboot(ip: &str) -> Result<(), MinerError> {
 mod tests {
     use super::*;
     use env_logger;
+    use log::info;
 
     #[tokio::test]
     async fn ant_test_update_conf() {

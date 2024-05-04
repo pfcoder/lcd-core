@@ -4,8 +4,6 @@ mod notify;
 mod store;
 
 use error::MinerError;
-use std::sync::Mutex;
-use store::db::DB;
 
 use log::info;
 use miner::entry::*;
@@ -15,26 +13,20 @@ use crate::store::db;
 #[macro_use]
 extern crate lazy_static;
 
-// lazy_static! {
-//     static ref LCD_DB: Mutex<Option<DB>> = Mutex::new(None);
-// }
-
 pub struct MinersLibConfig {
     pub app_path: String,
     pub feishu_app_id: String,
     pub feishu_app_secret: String,
     pub feishu_bot: String,
     pub is_need_db: bool,
+    pub db_keep_days: i64,
 }
 
 /// init lcd
 pub fn init(config: &MinersLibConfig) {
     // init sqlite db
     if config.is_need_db {
-        // let mut db = LCD_DB.lock().unwrap();
-        // let db_inst = DB::new(&config.app_path).unwrap();
-        // *db = Some(db_inst);
-        db::init(&config.app_path);
+        db::init(&config.app_path, config.db_keep_days);
     }
 
     notify::feishu::init(
@@ -99,4 +91,24 @@ pub async fn watching(
     ips: Vec<String>,
 ) -> Result<Vec<MachineInfo>, String> {
     miner::entry::watching(runtime, ips).await
+}
+
+/// query machine records
+pub fn query_machine_records_by_time(
+    ip: String,
+    start_time: i64,
+    end_time: i64,
+) -> Result<Vec<MachineRecord>, String> {
+    match db::query_records_by_time(ip, start_time, end_time) {
+        Ok(records) => Ok(records),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// clear records before time
+pub fn clear_records_before_time(time: i64) -> Result<(), String> {
+    match db::clear_records_before_time(time) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
