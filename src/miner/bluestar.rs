@@ -28,7 +28,7 @@ impl MinerOperation for BlueStarMiner {
         todo!()
     }
 
-    fn query(&self, _ip: String) -> Result<MachineInfo, MinerError> {
+    fn query(&self, _ip: String, _timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         todo!()
     }
 

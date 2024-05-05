@@ -194,8 +194,8 @@ impl MinerOperation for AvalonMiner {
         })
     }
 
-    fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
-        let versio = tcp_query_version(&ip)?;
+    fn query(&self, ip: String, timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
+        let versio = tcp_query_version(&ip, timeout_seconds)?;
         // extract MODEL=xxx from version
         let re = Regex::new(r"MODEL=([^,]+),").unwrap();
         let machine_type = match re.captures(&versio) {
@@ -203,9 +203,9 @@ impl MinerOperation for AvalonMiner {
             None => "Avalon".to_string(),
         };
 
-        let work = tcp_query_status(&ip)?;
-        let pools = tcp_query_pool(&ip)?;
-        let power_info = tcp_query_power(&ip)?;
+        let work = tcp_query_status(&ip, timeout_seconds)?;
+        let pools = tcp_query_pool(&ip, timeout_seconds)?;
+        let power_info = tcp_query_power(&ip, timeout_seconds)?;
 
         let temps = work.tavg.split(' ').collect::<Vec<&str>>();
 
@@ -309,7 +309,7 @@ impl MinerOperation for AvalonMiner {
     // }
 
     fn reboot(&self, ip: String) -> Result<(), MinerError> {
-        tcp_write_reboot(&ip)
+        tcp_write_reboot(&ip, 3)
     }
 
     fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
@@ -326,14 +326,15 @@ impl MinerOperation for AvalonMiner {
             pool.url = pool_prefix.to_string() + &pool.url;
             pool.user = pool.user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
         }
-        tcp_write_pool_config(&ip, update_pools)?;
-        tcp_write_reboot(&ip)
+        tcp_write_pool_config(&ip, update_pools, 3)?;
+        tcp_write_reboot(&ip, 3)
     }
 }
 
 fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), MinerError> {
-    let account_result = tcp_query_account(&ip)?;
-    let work = tcp_query_status(&ip)?;
+    let timeout = 3i64;
+    let account_result = tcp_query_account(&ip, timeout)?;
+    let work = tcp_query_status(&ip, timeout)?;
     //info!("avalon account result: {} {}", ip, account_result);
     let worker = account_result.split('.').next().unwrap();
     let config_worker = account.name.split('.').next().unwrap();
@@ -355,9 +356,9 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
         run_mode: account.run_mode.clone(),
     };
 
-    tcp_write_pool(&ip, &act)?;
-    tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 })?;
-    tcp_write_reboot(&ip)?;
+    tcp_write_pool(&ip, &act, timeout)?;
+    tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 }, timeout)?;
+    tcp_write_reboot(&ip, timeout)?;
     info!("avalon end switch account: {}", ip);
     Ok(())
 }
@@ -588,11 +589,17 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
 // Ok(())
 //}
 
-fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<String, MinerError> {
+fn tcp_cmd(
+    ip: &str,
+    port: u16,
+    cmd: &str,
+    is_waiting_write: bool,
+    timeout_seconds: i64,
+) -> Result<String, MinerError> {
     let addr = format!("{}:{}", ip, port);
     let addrs = addr.to_socket_addrs()?.next().unwrap();
-    let timeout_connect = Duration::from_secs(2);
-    let timeout_read_write = Duration::from_secs(5);
+    let timeout_connect = Duration::from_secs(timeout_seconds as u64);
+    let timeout_read_write = Duration::from_secs(timeout_seconds as u64);
 
     let mut stream = std::net::TcpStream::connect_timeout(&addrs, timeout_connect)?;
     stream.set_read_timeout(Some(timeout_read_write))?;
@@ -643,13 +650,13 @@ fn tcp_cmd(ip: &str, port: u16, cmd: &str, is_waiting_write: bool) -> Result<Str
 }
 
 /// query version
-pub fn tcp_query_version(ip: &str) -> Result<String, MinerError> {
-    tcp_cmd(ip, 4028, "version", true)
+pub fn tcp_query_version(ip: &str, timeout_seconds: i64) -> Result<String, MinerError> {
+    tcp_cmd(ip, 4028, "version", true, timeout_seconds)
 }
 
 /// query pool
-fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
-    let pool = tcp_cmd(ip, 4028, "pools", true)?;
+fn tcp_query_account(ip: &str, timeout_seconds: i64) -> Result<String, MinerError> {
+    let pool = tcp_cmd(ip, 4028, "pools", true, timeout_seconds)?;
     //info!("avalon tcp_query_account result: {}", pool);
     // find first User=xxx, extract xxx
     let re = Regex::new(r"User=([^,]+),").unwrap();
@@ -663,8 +670,8 @@ fn tcp_query_account(ip: &str) -> Result<String, MinerError> {
     }
 }
 
-fn tcp_query_pool(ip: &str) -> Result<Vec<PoolConfig>, MinerError> {
-    let res = tcp_cmd(ip, 4028, "pools", true)?;
+fn tcp_query_pool(ip: &str, timeout_seconds: i64) -> Result<Vec<PoolConfig>, MinerError> {
+    let res = tcp_cmd(ip, 4028, "pools", true, timeout_seconds)?;
     //info!("avalon tcp_query_pool result: {}", pool);
     // extract pool info
     let re = Regex::new(r"POOL=\d+,URL=([^,]+),.*?User=([^,]+),").unwrap();
@@ -682,7 +689,7 @@ fn tcp_query_pool(ip: &str) -> Result<Vec<PoolConfig>, MinerError> {
 }
 
 /// update pool
-fn tcp_write_pool(ip: &str, pool: &Account) -> Result<(), MinerError> {
+fn tcp_write_pool(ip: &str, pool: &Account, timeout_seconds: i64) -> Result<(), MinerError> {
     // ascset|0,setpool,root,root,2,stratum+tcp://btc.ss.poolin.com:443,cctrix.001,123
     let pool1 = format!(
         "ascset|0,setpool,root,root,0,{},{},{}",
@@ -699,14 +706,18 @@ fn tcp_write_pool(ip: &str, pool: &Account) -> Result<(), MinerError> {
         pool.pool3, pool.name, pool.password
     );
 
-    tcp_cmd(ip, 4028, &pool1, true)?;
-    tcp_cmd(ip, 4028, &pool2, true)?;
-    tcp_cmd(ip, 4028, &pool3, true)?;
+    tcp_cmd(ip, 4028, &pool1, true, timeout_seconds)?;
+    tcp_cmd(ip, 4028, &pool2, true, timeout_seconds)?;
+    tcp_cmd(ip, 4028, &pool3, true, timeout_seconds)?;
 
     Ok(())
 }
 
-fn tcp_write_pool_config(ip: &str, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
+fn tcp_write_pool_config(
+    ip: &str,
+    pools: Vec<PoolConfig>,
+    timeout_seconds: i64,
+) -> Result<(), MinerError> {
     // ascset|0,setpool,root,root,2,stratum+tcp://btc.ss.poolin.com:443,cctrix.001,123
     // let pool1 = format!(
     //     "ascset|0,setpool,root,root,0,{},{},{}",
@@ -731,21 +742,21 @@ fn tcp_write_pool_config(ip: &str, pools: Vec<PoolConfig>) -> Result<(), MinerEr
             "ascset|0,setpool,root,root,{},{},{},{}",
             i, pool.url, pool.user, pool.password
         );
-        tcp_cmd(ip, 4028, &cmd, true)?;
+        tcp_cmd(ip, 4028, &cmd, true, timeout_seconds)?;
     }
 
     Ok(())
 }
 
-fn tcp_write_workmode(ip: &str, mode: i32) -> Result<(), MinerError> {
+fn tcp_write_workmode(ip: &str, mode: i32, timeout_seconds: i64) -> Result<(), MinerError> {
     // ascset|0,workmode,1
     let cmd = format!("ascset|0,workmode,{}", mode);
-    tcp_cmd(ip, 4028, &cmd, true)?;
+    tcp_cmd(ip, 4028, &cmd, true, timeout_seconds)?;
     Ok(())
 }
 
-fn tcp_query_status(ip: &str) -> Result<AvalonWorkStatus, MinerError> {
-    let res = tcp_cmd(ip, 4028, "estats", true)?;
+fn tcp_query_status(ip: &str, timeout_seconds: i64) -> Result<AvalonWorkStatus, MinerError> {
+    let res = tcp_cmd(ip, 4028, "estats", true, timeout_seconds)?;
     //info!("avalon tcp_query_status result: {}", res);
     let mut work: AvalonWorkStatus = AvalonWorkStatus::default();
     // SYSTEMSTATU[Work: In Work, Hash Board: 3 ] ... Elapsed[1697]
@@ -779,8 +790,8 @@ fn tcp_query_status(ip: &str) -> Result<AvalonWorkStatus, MinerError> {
     Ok(work)
 }
 
-fn tcp_query_power(ip: &str) -> Result<AvalonPowerStatus, MinerError> {
-    let res = tcp_cmd(ip, 4028, "ascset|0,hashpower", true)?;
+fn tcp_query_power(ip: &str, timeout_seconds: i64) -> Result<AvalonPowerStatus, MinerError> {
+    let res = tcp_cmd(ip, 4028, "ascset|0,hashpower", true, timeout_seconds)?;
     let mut power = AvalonPowerStatus::default();
     // extract PS[0 1196 1284 230 2953 1284] from res
     let re = Regex::new(r"PS\[(\d+) (\d+) (\d+) (\d+) (\d+) (\d+)\]").unwrap();
@@ -806,8 +817,8 @@ fn tcp_query_power(ip: &str) -> Result<AvalonPowerStatus, MinerError> {
 }
 
 /// reboot machine
-fn tcp_write_reboot(ip: &str) -> Result<(), MinerError> {
-    tcp_cmd(ip, 4028, "ascset|0,reboot,0", false)?; // cgminer-api-restart
+fn tcp_write_reboot(ip: &str, timeout_seconds: i64) -> Result<(), MinerError> {
+    tcp_cmd(ip, 4028, "ascset|0,reboot,0", false, timeout_seconds)?; // cgminer-api-restart
     Ok(())
 }
 
@@ -903,7 +914,7 @@ mod tests {
         let _ = *SETUP;
         let ip = "192.168.189.207";
         let miner = AvalonMiner {};
-        let info = miner.query(ip.to_string()).unwrap();
+        let info = miner.query(ip.to_string(), 3).unwrap();
         info!("avalon info: {:?}", info);
     }
 
@@ -911,7 +922,7 @@ mod tests {
     fn avalon_tcp_query_version() {
         let _ = *SETUP;
         let ip = "192.168.187.186";
-        let res = tcp_query_version(ip).unwrap();
+        let res = tcp_query_version(ip, 3).unwrap();
         info!("avalon tcp_query_version result: {}", res);
         assert!(res.contains("STATUS"));
     }
@@ -920,7 +931,7 @@ mod tests {
     fn avalon_tcp_cmd_reboot() {
         let _ = *SETUP;
         let ip = "192.168.189.213";
-        let _res = tcp_write_reboot(ip).unwrap();
+        let _res = tcp_write_reboot(ip, 3).unwrap();
         assert!(true);
     }
 
@@ -928,7 +939,7 @@ mod tests {
     fn avalon_tcp_query_account() {
         let _ = *SETUP;
         let ip = "192.168.189.212";
-        let res = tcp_query_account(ip).unwrap();
+        let res = tcp_query_account(ip, 3).unwrap();
         info!("avalon tcp_query_account result: {}", res);
         assert!(true);
     }
@@ -937,7 +948,7 @@ mod tests {
     fn avalon_tcp_query_pool() {
         let _ = *SETUP;
         let ip = "192.168.189.212";
-        let res = tcp_query_pool(ip).unwrap();
+        let res = tcp_query_pool(ip, 3).unwrap();
         info!("avalon tcp_query_pool result: {:?}", res);
         assert!(true);
     }
@@ -955,7 +966,7 @@ mod tests {
             pool3: "stratum+tcp://192.168.190.8:9011".to_string(),
             run_mode: "0".to_string(),
         };
-        let res = tcp_write_pool(ip, &account).unwrap();
+        let res = tcp_write_pool(ip, &account, 3).unwrap();
         assert!(true);
     }
 
@@ -963,7 +974,7 @@ mod tests {
     fn avalon_tcp_query_status() {
         let _ = *SETUP;
         let ip = "192.168.188.22";
-        let res = tcp_query_status(ip).unwrap();
+        let res = tcp_query_status(ip, 3).unwrap();
         info!("avalon tcp_query_status result: {:?}", res);
         assert!(true);
     }
@@ -972,7 +983,7 @@ mod tests {
     fn avalon_tcp_query_power() {
         let _ = *SETUP;
         let ip = "192.168.189.170";
-        let res = tcp_query_power(ip).unwrap();
+        let res = tcp_query_power(ip, 3).unwrap();
         info!("avalon tcp_query_power result: {:?}", res);
         assert!(true);
     }

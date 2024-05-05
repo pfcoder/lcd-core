@@ -163,7 +163,7 @@ pub type AsyncOpType<T> = Pin<Box<dyn std::future::Future<Output = Result<T, Min
 pub trait MinerOperation {
     fn info(&self) -> MinerInfo;
     fn detect(&self, headers: Vec<String>, body: &str) -> Result<MinerType, MinerError>;
-    fn query(&self, ip: String) -> Result<MachineInfo, MinerError>;
+    fn query(&self, ip: String, timeout_seconds: i64) -> Result<MachineInfo, MinerError>;
     fn switch_account_if_diff(
         &self,
         ip: String,
@@ -217,11 +217,11 @@ impl MinerOperation for MinerType {
         }
     }
 
-    fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
+    fn query(&self, ip: String, timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         match self {
-            MinerType::Ant(miner) => miner.query(ip),
-            MinerType::Avalon(miner) => miner.query(ip),
-            MinerType::BlueStar(miner) => miner.query(ip),
+            MinerType::Ant(miner) => miner.query(ip, timeout_seconds),
+            MinerType::Avalon(miner) => miner.query(ip, timeout_seconds),
+            MinerType::BlueStar(miner) => miner.query(ip, timeout_seconds),
         }
     }
 
@@ -242,12 +242,12 @@ impl MinerOperation for MinerType {
     }
 }
 
-fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
+fn find_miner(ip: &str, timeout_seconds: i64) -> Result<MinerType, MinerError> {
     info!("start detect: {}", ip);
     let mut easy = Easy::new();
     easy.url(&ip)?;
     // timeout 5s
-    easy.timeout(Duration::from_secs(2))?;
+    easy.timeout(Duration::from_secs(timeout_seconds as u64))?;
     let mut headers = Vec::new();
     let mut data = Vec::new();
     {
@@ -263,7 +263,7 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
         match transfer.perform() {
             Ok(_) => {}
             Err(_) => {
-                let _ = avalon::tcp_query_version(ip)?;
+                let _ = avalon::tcp_query_version(ip, timeout_seconds)?;
                 return Ok(MinerType::Avalon(AvalonMiner {}));
             }
         }
@@ -274,7 +274,7 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
         Ok(_) => {}
         Err(_) => {
             info!("find miner open web fail, try avalon tcp: {}", ip);
-            let _ = avalon::tcp_query_version(ip)?;
+            let _ = avalon::tcp_query_version(ip, timeout_seconds)?;
             return Ok(MinerType::Avalon(AvalonMiner {}));
         }
     }
@@ -292,10 +292,10 @@ fn find_miner(ip: &str) -> Result<MinerType, MinerError> {
     Err(MinerError::MinerNotSupportError)
 }
 
-pub fn scan_miner_detail(ip: String) -> AsyncOpType<MachineInfo> {
+pub fn scan_miner_detail(ip: String, timeout_seconds: i64) -> AsyncOpType<MachineInfo> {
     Box::pin(async move {
-        let miner = find_miner(&ip)?;
-        let machine_info = miner.query(ip)?;
+        let miner = find_miner(&ip, timeout_seconds)?;
+        let machine_info = miner.query(ip, timeout_seconds)?;
         // process db record
         db::insert_machine_record(&machine_info.record)?;
         Ok(machine_info)
@@ -304,7 +304,7 @@ pub fn scan_miner_detail(ip: String) -> AsyncOpType<MachineInfo> {
 
 fn scan_reboot(ip: String) -> Result<(), MinerError> {
     info!("try to reboot: {}", ip);
-    let miner = find_miner(&ip)?;
+    let miner = find_miner(&ip, 3)?;
     miner.reboot(ip)
 }
 
@@ -687,6 +687,7 @@ pub async fn scan(
     ip_demo: &str,
     offset: i32,
     count: i32,
+    timeout_seconds: i64,
 ) -> Result<Vec<MachineInfo>, String> {
     let ip_prefix = ip_demo.split('.').take(3).collect::<Vec<&str>>().join(".");
     info!(
@@ -697,7 +698,7 @@ pub async fn scan(
     let mut handles = vec![];
     for i in offset..(offset + count) {
         let ip = format!("{}.{}", ip_prefix, i);
-        handles.push(runtime.spawn(async move { scan_miner_detail(ip).await }));
+        handles.push(runtime.spawn(async move { scan_miner_detail(ip, timeout_seconds).await }));
     }
 
     let result = futures::future::join_all(handles).await;
@@ -725,11 +726,12 @@ pub async fn scan(
 pub async fn watching(
     runtime: tokio::runtime::Handle,
     ips: Vec<String>,
+    timeout_seconds: i64,
 ) -> Result<Vec<MachineInfo>, String> {
     info!("watching ips: {:?}", ips);
     let mut handles = vec![];
     for ip in ips {
-        handles.push(runtime.spawn(async move { scan_miner_detail(ip).await }));
+        handles.push(runtime.spawn(async move { scan_miner_detail(ip, timeout_seconds).await }));
     }
 
     let result = futures::future::join_all(handles).await;
@@ -772,7 +774,7 @@ pub async fn config_batch(
     for ip in ips {
         let act = pools.clone();
         handles.push(runtime.spawn(async move {
-            let miner = find_miner(&ip)?;
+            let miner = find_miner(&ip, 3)?;
             miner.config_pool(ip, act.clone())
         }));
     }
@@ -863,7 +865,7 @@ mod tests {
     async fn test_scan_and_update_db() {
         let _ = &*SETUP;
 
-        scan(TEST_RUNTIME.handle().clone(), "192.168.187.1", 0, 255)
+        scan(TEST_RUNTIME.handle().clone(), "192.168.187.1", 0, 255, 3)
             .await
             .unwrap();
         assert!(true);

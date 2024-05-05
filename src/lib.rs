@@ -64,9 +64,10 @@ pub async fn scan(
     ip: &str,
     offset: i32,
     count: i32,
+    timeout_seconds: i64,
 ) -> Result<Vec<MachineInfo>, String> {
     info!("scan ip: {}", ip);
-    miner::entry::scan(runtime, ip, offset, count).await
+    miner::entry::scan(runtime, ip, offset, count, timeout_seconds).await
 }
 
 /// batch reboot
@@ -89,8 +90,9 @@ pub async fn config(
 pub async fn watching(
     runtime: tokio::runtime::Handle,
     ips: Vec<String>,
+    timeout_seconds: i64,
 ) -> Result<Vec<MachineInfo>, String> {
-    miner::entry::watching(runtime, ips).await
+    miner::entry::watching(runtime, ips, timeout_seconds).await
 }
 
 /// query machine records

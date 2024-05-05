@@ -166,7 +166,7 @@ impl MinerOperation for AntMiner {
         })
     }
 
-    fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
+    fn query(&self, ip: String, _timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         let json = query_machine(&ip)?;
         let conf = get_conf(&ip)?;
 
@@ -396,7 +396,7 @@ mod tests {
         env_logger::try_init();
         let ip = "192.168.190.231";
         let miner = AntMiner {};
-        let info = miner.query(ip.to_string()).unwrap();
+        let info = miner.query(ip.to_string(), 3).unwrap();
         info!("ant info: {:?}", info);
         assert!(true);
     }

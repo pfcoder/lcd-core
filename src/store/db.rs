@@ -117,7 +117,7 @@ impl DB {
     // clear specified records before specified time
     pub fn clear_records_before_time(&self, time: i64) -> Result<(), MinerError> {
         self.conn.execute(
-            "DELETE FROM t_machine_record WHERE create_time < ?2",
+            "DELETE FROM t_machine_record WHERE create_time < ?1",
             params![time],
         )?;
 
@@ -147,12 +147,14 @@ fn get_db_path(app_path: &str) -> String {
 pub fn init(app_path: &str, data_keep_days: i64) {
     let mut db = LCD_DB.lock().unwrap();
     let db_inst = DB::new(app_path).unwrap();
-    *db = Some(db_inst);
 
-    info!("lcd db initialized.");
     // try to clear old data
     let now = chrono::Local::now().timestamp();
-    clear_records_before_time(now - data_keep_days * 24 * 3600).unwrap();
+    db_inst
+        .clear_records_before_time(now - data_keep_days * 24 * 3600)
+        .unwrap();
+    *db = Some(db_inst);
+    info!("lcd db initialized.");
 }
 
 pub fn insert_machine_record(machine: &MachineRecord) -> Result<i32, MinerError> {
