@@ -100,6 +100,7 @@ pub struct Machine {
     pub switch_account: Option<Account>,
     pub addition_info: String,
     pub run_mode: String,
+    pub is_run_mode_fixed: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -463,6 +464,10 @@ pub async fn load_machines_from_feishu(
                 switch_account: switch_account,
                 run_mode: "".to_string(),
                 addition_info: format!("{} {}", position, addition_info),
+                is_run_mode_fixed: match row[17].as_str() {
+                    Some("1") => true,
+                    _ => false,
+                },
             };
 
             // put into map
@@ -579,7 +584,9 @@ pub async fn switch_if_need(
                 };
 
                 // check switch_account run_mode, if be “高功", the perf also should be "高功", then we set
-                if switch_account.run_mode == "高功" && perf_mode == "高功" {
+                if switch_account.run_mode == "高功"
+                    && (machine.is_run_mode_fixed || perf_mode == "高功")
+                {
                     switch_account.run_mode = "高功".to_string();
                 } else {
                     switch_account.run_mode = "普通".to_string();
