@@ -189,8 +189,10 @@ impl MinerOperation for AntMiner {
         Ok(MachineInfo {
             ip: ip.clone(),
             elapsed: elapsed_str,
-            hash_real: format!("{:.3} GH/s", hash_real),
-            hash_avg: format!("{:.3} GH/s", hash_avg),
+            hash_real: format!("{:.3} THS", hash_real / 1000.0),
+            hash_avg: format!("{:.3} THS", hash_avg / 1000.0),
+            pool_hash_avg: "N/A".to_string(),
+            pool_hash_real: "N/A".to_string(),
             machine_type: machine_type.clone(),
             temp: "0".to_string(),
             fan: "0".to_string(),

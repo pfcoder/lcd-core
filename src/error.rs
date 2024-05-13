@@ -27,6 +27,15 @@ pub enum MinerError {
     #[error("Ping Error")]
     PingFiledError,
 
+    #[error("Poolin Api Regex Error")]
+    PoolinApiRegexError,
+
+    #[error("Poolin Api Request Error")]
+    PoolinApiRequestError,
+
+    #[error("Pool Type Not Detected")]
+    PoolTypeNotDetected,
+
     #[error(transparent)]
     SQLiteError(#[from] rusqlite::Error),
 

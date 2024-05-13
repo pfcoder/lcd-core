@@ -233,6 +233,8 @@ impl MinerOperation for AvalonMiner {
             } else {
                 "普通".to_string()
             },
+            pool_hash_avg: "N/A".to_string(),
+            pool_hash_real: "N/A".to_string(),
             record: MachineRecord {
                 id: 0,
                 ip: ip,

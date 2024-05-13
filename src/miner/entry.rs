@@ -124,6 +124,8 @@ pub struct MachineInfo {
     pub machine_type: String,
     pub hash_real: String,
     pub hash_avg: String,
+    pub pool_hash_real: String,
+    pub pool_hash_avg: String,
     pub temp: String,
     pub fan: String,
     pub elapsed: String,
@@ -296,9 +298,22 @@ fn find_miner(ip: &str, timeout_seconds: i64) -> Result<MinerType, MinerError> {
 pub fn scan_miner_detail(ip: String, timeout_seconds: i64) -> AsyncOpType<MachineInfo> {
     Box::pin(async move {
         let miner = find_miner(&ip, timeout_seconds)?;
-        let machine_info = miner.query(ip, timeout_seconds)?;
+        let mut machine_info = miner.query(ip.clone(), timeout_seconds)?;
         // process db record
         db::insert_machine_record(&machine_info.record)?;
+        // query pool record
+        let pool_record = db::get_newest_pool_record(&ip)?;
+        if let Some(pool_record) = pool_record {
+            info!(
+                "pool record time: {}, machine time: {}",
+                pool_record.time_stamp, machine_info.record.create_time
+            );
+            // if time diff under 10min, get abs value
+            if (machine_info.record.create_time - pool_record.time_stamp).abs() < 600 {
+                machine_info.pool_hash_real = format!("{:.2} THS", pool_record.hash_real);
+                machine_info.pool_hash_avg = format!("{:.2} THS", pool_record.hash_avg);
+            }
+        }
         Ok(machine_info)
     })
 }

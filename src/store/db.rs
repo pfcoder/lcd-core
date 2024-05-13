@@ -1,7 +1,8 @@
 use std::{path::Path, sync::Mutex};
 
-use crate::miner::entry::MachineRecord;
+use crate::{miner::entry::MachineRecord, pools::pool::PoolWorker};
 use log::info;
+use reqwest::dns::Name;
 use rusqlite::{params, Connection};
 use std::fs;
 
@@ -42,6 +43,19 @@ impl DB {
                   temp_2          REAL,
                   power           INTEGER,
                   create_time     INTEGER
+                  )",
+            [],
+        )?;
+
+        // pool record
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS t_pool_record (
+                  id              INTEGER PRIMARY KEY,
+                  name            TEXT,
+                  hash_real       REAL,
+                  hash_avg        REAL,
+                  pool_type       TEXT,
+                  time_stamp      INTEGER
                   )",
             [],
         )?;
@@ -121,7 +135,93 @@ impl DB {
             params![time],
         )?;
 
+        self.conn.execute(
+            "DELETE FROM t_pool_record WHERE time_stamp < ?1",
+            params![time],
+        )?;
+
         Ok(())
+    }
+
+    pub fn insert_pool_record(
+        &self,
+        name: &str,
+        hash_real: f64,
+        hash_avg: f64,
+        pool_type: &str,
+        time_stamp: i64,
+    ) -> Result<i32, MinerError> {
+        // insert pool record
+        self.conn.execute(
+            "INSERT INTO t_pool_record (name, hash_real, hash_avg, pool_type, time_stamp)
+                  VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![name, hash_real, hash_avg, pool_type, time_stamp],
+        )?;
+
+        // return pool record id
+        Ok(self.conn.last_insert_rowid() as i32)
+    }
+
+    pub fn query_pool_records_by_time(
+        &self,
+        name: String,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<Vec<PoolWorker>, MinerError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, hash_real, hash_avg, pool_type, time_stamp
+                  FROM t_pool_record
+                  WHERE name == ?1 AND time_stamp >= ?2 AND time_stamp <= ?3",
+        )?;
+
+        info!(
+            "query pool records by time: {} {} {}",
+            name, start_time, end_time
+        );
+
+        let rows = stmt.query_map(params![name, start_time, end_time], |row| {
+            Ok(PoolWorker {
+                name: row.get(1)?,
+                hash_real: row.get(2)?,
+                hash_avg: row.get(3)?,
+                pool_type: row.get(4)?,
+                time_stamp: row.get(5)?,
+            })
+        })?;
+
+        let mut workers = vec![];
+        for worker in rows {
+            workers.push(worker?);
+        }
+
+        info!("query pool records by time: {:?}", workers.len());
+        Ok(workers)
+    }
+
+    fn get_newest_pool_record(&self, name: &str) -> Result<Option<PoolWorker>, MinerError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, hash_real, hash_avg, pool_type, time_stamp
+                  FROM t_pool_record
+                  WHERE name == ?1
+                  ORDER BY time_stamp DESC
+                  LIMIT 1",
+        )?;
+
+        let mut rows = stmt.query_map(params![name], |row| {
+            Ok(PoolWorker {
+                name: row.get(1)?,
+                hash_real: row.get(2)?,
+                hash_avg: row.get(3)?,
+                pool_type: row.get(4)?,
+                time_stamp: row.get(5)?,
+            })
+        })?;
+
+        if let Some(row) = rows.next() {
+            Ok(Some(row?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -174,6 +274,42 @@ pub fn query_records_by_time(
     match &*db {
         Some(db) => db.query_machine_records_by_time(ip, start_time, end_time),
         None => Ok(Vec::new()),
+    }
+}
+
+pub fn insert_pool_record(
+    name: &str,
+    hash_real: f64,
+    hash_avg: f64,
+    pool_type: &str,
+    time_stamp: i64,
+) -> Result<i32, MinerError> {
+    let db = LCD_DB.lock().unwrap();
+    match &*db {
+        Some(db) => db.insert_pool_record(name, hash_real, hash_avg, pool_type, time_stamp),
+        None => Ok(-1),
+    }
+}
+
+pub fn query_pool_records_by_time(
+    name: String,
+    start_time: i64,
+    end_time: i64,
+) -> Result<Vec<PoolWorker>, MinerError> {
+    let db = LCD_DB.lock().unwrap();
+    match &*db {
+        Some(db) => db.query_pool_records_by_time(name, start_time, end_time),
+        None => Ok(Vec::new()),
+    }
+}
+
+pub fn get_newest_pool_record(ip: &str) -> Result<Option<PoolWorker>, MinerError> {
+    let db = LCD_DB.lock().unwrap();
+    let ip_segs = ip.split(".").collect::<Vec<&str>>();
+    let name = format!("{}x{}", ip_segs[2], ip_segs[3]);
+    match &*db {
+        Some(db) => db.get_newest_pool_record(&name),
+        None => Ok(None),
     }
 }
 

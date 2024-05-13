@@ -1,12 +1,14 @@
 pub mod error;
 pub mod miner;
 mod notify;
+mod pools;
 mod store;
 
 use error::MinerError;
 
 use log::info;
 use miner::entry::*;
+use pools::pool::PoolWorker;
 
 use crate::store::db;
 
@@ -20,10 +22,11 @@ pub struct MinersLibConfig {
     pub feishu_bot: String,
     pub is_need_db: bool,
     pub db_keep_days: i64,
+    //pub pool_watching_url: Option<String>,
 }
 
 /// init lcd
-pub fn init(config: &MinersLibConfig) {
+pub fn init(config: &MinersLibConfig, runtime: tokio::runtime::Handle) {
     // init sqlite db
     if config.is_need_db {
         db::init(&config.app_path, config.db_keep_days);
@@ -34,6 +37,14 @@ pub fn init(config: &MinersLibConfig) {
         &config.feishu_app_secret,
         &config.feishu_bot,
     );
+
+    // if config.pool_watching_url.is_some() {
+    //     info!("need schedule pool query task");
+    //     pools::pool::schedule_query_task(
+    //         runtime,
+    //         config.pool_watching_url.as_ref().unwrap().clone(),
+    //     );
+    // }
 
     info!("lcd initialized.");
 }
@@ -113,4 +124,17 @@ pub fn clear_records_before_time(time: i64) -> Result<(), String> {
         Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+/// through watching url to query pool workers data
+pub async fn query_pool_workers(url: String) -> Result<Vec<PoolWorker>, MinerError> {
+    pools::pool::query_pool_workers(&url).await
+}
+
+/// start pool record update task
+pub fn start_pool_record_update_task(
+    runtime: tokio::runtime::Handle,
+    watcher_url: String,
+) -> tokio::task::JoinHandle<()> {
+    pools::pool::schedule_query_task(runtime, watcher_url)
 }
