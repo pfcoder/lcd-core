@@ -64,7 +64,9 @@ impl From<PoolinWorker> for PoolWorker {
             name: pw.worker_name,
             hash_real: pw.shares_15m,
             hash_avg: pw.shares_24h,
-            time_stamp: pw.last_share_time,
+            //time_stamp: pw.last_share_time,
+            // use current system time
+            time_stamp: chrono::Local::now().timestamp(),
             pool_type: "poolin".to_string(),
         }
     }

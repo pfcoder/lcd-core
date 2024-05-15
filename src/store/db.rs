@@ -2,7 +2,6 @@ use std::{path::Path, sync::Mutex};
 
 use crate::{miner::entry::MachineRecord, pools::pool::PoolWorker};
 use log::info;
-use reqwest::dns::Name;
 use rusqlite::{params, Connection};
 use std::fs;
 
@@ -162,7 +161,7 @@ impl DB {
         Ok(self.conn.last_insert_rowid() as i32)
     }
 
-    pub fn query_pool_records_by_time(
+    pub fn _query_pool_records_by_time(
         &self,
         name: String,
         start_time: i64,
@@ -291,14 +290,14 @@ pub fn insert_pool_record(
     }
 }
 
-pub fn query_pool_records_by_time(
+pub fn _query_pool_records_by_time(
     name: String,
     start_time: i64,
     end_time: i64,
 ) -> Result<Vec<PoolWorker>, MinerError> {
     let db = LCD_DB.lock().unwrap();
     match &*db {
-        Some(db) => db.query_pool_records_by_time(name, start_time, end_time),
+        Some(db) => db._query_pool_records_by_time(name, start_time, end_time),
         None => Ok(Vec::new()),
     }
 }

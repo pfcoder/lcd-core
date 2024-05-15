@@ -46,23 +46,52 @@ impl Pool for PoolType {
     }
 }
 
-pub async fn query_pool_workers(watcher_url: &str) -> Result<Vec<PoolWorker>, MinerError> {
+pub async fn query_pool_workers(
+    watcher_url: &str,
+    f2p_account: &str,
+    f2p_secret: &str,
+) -> Result<Vec<PoolWorker>, MinerError> {
+    let mut workers = vec![];
     // detect pool type
-    match PoolType::detect(watcher_url) {
-        Ok(pool) => pool.query().await,
-        Err(e) => Err(e),
+    if watcher_url.contains("poolin") {
+        match PoolType::detect(watcher_url) {
+            Ok(pool) => {
+                // get query result, ignore error, return empty vec
+                let w = match pool.query().await {
+                    Ok(result) => result,
+                    Err(_) => vec![],
+                };
+                workers.extend(w);
+            }
+            Err(e) => {
+                error!("detect pool type error: {:?}", e);
+            }
+        }
     }
+
+    if f2p_account.len() > 0 && f2p_secret.len() > 0 {
+        let f2pool = F2pool::from_account(f2p_account.to_string(), f2p_secret.to_string());
+        let w = match f2pool.query().await {
+            Ok(result) => result,
+            Err(_) => vec![],
+        };
+        workers.extend(w);
+    }
+
+    Ok(workers)
 }
 
 pub fn schedule_query_task(
     runtime: tokio::runtime::Handle,
     watcher_url: String,
+    f2p_account: String,
+    f2p_secret: String,
 ) -> tokio::task::JoinHandle<()> {
     // create tokio runtime context
     return runtime.spawn(async move {
         loop {
             info!("query pool workers task scheduled.");
-            let workers = query_pool_workers(&watcher_url).await;
+            let workers = query_pool_workers(&watcher_url, &f2p_account, &f2p_secret).await;
             match workers {
                 Ok(workers) => {
                     // update db
