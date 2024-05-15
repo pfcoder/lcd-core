@@ -1,5 +1,5 @@
 use log::info;
-use reqwest::header;
+use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 
 use crate::error::MinerError;
@@ -43,7 +43,7 @@ impl From<serde_json::Value> for F2poolWorker {
     fn from(value: serde_json::Value) -> Self {
         let mut worker = F2poolWorker::default();
         if let Some(worker_array) = value.as_array() {
-            if let (Some(name), Some(hash_rate), Some(h1_hash_rate), Some(time_stamp)) = (
+            if let (Some(name), Some(hash_rate), Some(h1_hash_rate), Some(_time_stamp)) = (
                 worker_array.get(0).and_then(|v| v.as_str()),
                 worker_array.get(1).and_then(|v| v.as_f64()),
                 worker_array.get(2).and_then(|v| v.as_f64()),
@@ -82,9 +82,20 @@ impl From<F2poolWorker> for PoolWorker {
 }
 
 impl Pool for F2pool {
-    async fn query(&self) -> Result<Vec<PoolWorker>, MinerError> {
-        let proxy = reqwest::Proxy::all("http://127.0.0.1:7890").unwrap();
-        let client = reqwest::Client::builder().proxy(proxy).build()?;
+    async fn query(&self, proxy: &str) -> Result<Vec<PoolWorker>, MinerError> {
+        let client: Client;
+        if !proxy.is_empty() {
+            // if proxy not start with http, add it
+            let proxy = if proxy.starts_with("http") {
+                proxy.to_string()
+            } else {
+                format!("http://{}", proxy)
+            };
+            let proxy = reqwest::Proxy::all(proxy).unwrap();
+            client = Client::builder().proxy(proxy).build()?;
+        } else {
+            client = Client::new();
+        }
 
         info!("query f2pool workers: {}/{}", self.api_url, self.account);
         let resp = client
@@ -144,7 +155,7 @@ mod tests {
 
         let f2pool = F2pool::from_account("x".to_string(), "x".to_string());
 
-        let workers = f2pool.query().await.unwrap();
+        let workers = f2pool.query("").await.unwrap();
         info!("workers: {:?}", workers);
         assert!(!workers.is_empty());
     }

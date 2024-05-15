@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::pool::{Pool, PoolWorker};
 use crate::error::MinerError;
-use reqwest::header;
+use reqwest::{header, Client};
 
 pub struct Poolin {
     pub api_url: String,
@@ -73,7 +73,7 @@ impl From<PoolinWorker> for PoolWorker {
 }
 
 impl Pool for Poolin {
-    async fn query(&self) -> Result<Vec<PoolWorker>, MinerError> {
+    async fn query(&self, proxy: &str) -> Result<Vec<PoolWorker>, MinerError> {
         let mut workers = vec![];
 
         // page query all data from poolin
@@ -81,7 +81,7 @@ impl Pool for Poolin {
         let mut page = 1;
         loop {
             let resp = self
-                .query_poolin_api(&self.api_url, page, page_size)
+                .query_poolin_api(proxy, &self.api_url, page, page_size)
                 .await?;
             if resp.err_no != 0 {
                 return Err(MinerError::PoolinApiRequestError);
@@ -110,11 +110,24 @@ impl Pool for Poolin {
 impl Poolin {
     pub async fn query_poolin_api(
         &self,
+        proxy: &str,
         url: &str,
         page: i32,
         page_size: i32,
     ) -> Result<PoolinResponse, MinerError> {
-        let client = reqwest::Client::new();
+        let client: Client;
+        if !proxy.is_empty() {
+            // if proxy not start with http, add it
+            let proxy = if proxy.starts_with("http") {
+                proxy.to_string()
+            } else {
+                format!("http://{}", proxy)
+            };
+            let proxy = reqwest::Proxy::all(proxy).unwrap();
+            client = Client::builder().proxy(proxy).build()?;
+        } else {
+            client = Client::new();
+        }
 
         let resp: PoolinResponse = client
             .get(format!("{}&page={}&pagesize={}", url, page, page_size))
@@ -159,7 +172,7 @@ mod tests {
         let _ = &*SETUP;
         let watcher = "https://www.poolin.one/my/9273101/btc/dashboard?read_token=wowUx0bw6YzPQfdijDDdduSeI2ueMUsKRWgCLcbl6hUWXq3lr9JVcpqHEq2KAqmh";
         let poolin = Poolin::from_watcher(watcher).unwrap();
-        let workers = poolin.query().await.unwrap();
+        let workers = poolin.query("").await.unwrap();
         info!("workers: {:?}", workers);
         assert_eq!(workers.len(), 27);
     }

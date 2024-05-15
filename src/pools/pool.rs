@@ -34,19 +34,20 @@ pub struct PoolWorker {
 
 // define trait for general pool api query
 pub trait Pool {
-    async fn query(&self) -> Result<Vec<PoolWorker>, MinerError>;
+    async fn query(&self, proxy: &str) -> Result<Vec<PoolWorker>, MinerError>;
 }
 
 impl Pool for PoolType {
-    async fn query(&self) -> Result<Vec<PoolWorker>, MinerError> {
+    async fn query(&self, proxy: &str) -> Result<Vec<PoolWorker>, MinerError> {
         match self {
-            PoolType::Poolin(poolin) => poolin.query().await,
-            PoolType::F2pool(f2pool) => f2pool.query().await,
+            PoolType::Poolin(poolin) => poolin.query(proxy).await,
+            PoolType::F2pool(f2pool) => f2pool.query(proxy).await,
         }
     }
 }
 
 pub async fn query_pool_workers(
+    proxy: &str,
     watcher_url: &str,
     f2p_account: &str,
     f2p_secret: &str,
@@ -57,7 +58,7 @@ pub async fn query_pool_workers(
         match PoolType::detect(watcher_url) {
             Ok(pool) => {
                 // get query result, ignore error, return empty vec
-                let w = match pool.query().await {
+                let w = match pool.query(proxy).await {
                     Ok(result) => result,
                     Err(_) => vec![],
                 };
@@ -71,7 +72,7 @@ pub async fn query_pool_workers(
 
     if f2p_account.len() > 0 && f2p_secret.len() > 0 {
         let f2pool = F2pool::from_account(f2p_account.to_string(), f2p_secret.to_string());
-        let w = match f2pool.query().await {
+        let w = match f2pool.query(proxy).await {
             Ok(result) => result,
             Err(_) => vec![],
         };
@@ -83,6 +84,7 @@ pub async fn query_pool_workers(
 
 pub fn schedule_query_task(
     runtime: tokio::runtime::Handle,
+    proxy: String,
     watcher_url: String,
     f2p_account: String,
     f2p_secret: String,
@@ -91,7 +93,7 @@ pub fn schedule_query_task(
     return runtime.spawn(async move {
         loop {
             info!("query pool workers task scheduled.");
-            let workers = query_pool_workers(&watcher_url, &f2p_account, &f2p_secret).await;
+            let workers = query_pool_workers(&proxy, &watcher_url, &f2p_account, &f2p_secret).await;
             match workers {
                 Ok(workers) => {
                     // update db

@@ -22,7 +22,6 @@ pub struct MinersLibConfig {
     pub feishu_bot: String,
     pub is_need_db: bool,
     pub db_keep_days: i64,
-    //pub pool_watching_url: Option<String>,
 }
 
 /// init lcd
@@ -126,9 +125,10 @@ pub fn clear_records_before_time(time: i64) -> Result<(), String> {
 /// start pool record update task
 pub fn start_pool_record_update_task(
     runtime: tokio::runtime::Handle,
+    proxy: String,
     watcher_url: String,
     f2p_account: String,
     f2p_secret: String,
 ) -> tokio::task::JoinHandle<()> {
-    pools::pool::schedule_query_task(runtime, watcher_url, f2p_account, f2p_secret)
+    pools::pool::schedule_query_task(runtime, proxy, watcher_url, f2p_account, f2p_secret)
 }
