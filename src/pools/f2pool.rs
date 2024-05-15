@@ -108,7 +108,7 @@ impl Pool for F2pool {
 
         let json_body = resp.json::<serde_json::Value>().await?;
 
-        info!("resp: {:?}", json_body.get("workers"));
+        //info!("resp: {:?}", json_body.get("workers"));
         let workers: Vec<PoolWorker> = json_body
             .get("workers")
             .and_then(|v| v.as_array())
