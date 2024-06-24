@@ -27,6 +27,10 @@ pub enum MinerError {
     #[error("Ping Error")]
     PingFiledError,
 
+    // web socket error with param
+    #[error("Websocket Error: {0}")]
+    WebSocketError(String),
+
     #[error("Poolin Api Regex Error")]
     PoolinApiRegexError,
 
