@@ -230,7 +230,7 @@ impl MinerOperation for AntMiner {
         reboot(ip)
     }
 
-    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError> {
+    fn config_mode(&self, _ip: &str, _mode: &str) -> Result<(), MinerError> {
         todo!()
     }
 

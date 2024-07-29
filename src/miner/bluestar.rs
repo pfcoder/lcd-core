@@ -40,11 +40,11 @@ impl MinerOperation for BlueStarMiner {
         todo!()
     }
 
-    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError> {
+    fn config_mode(&self, _ip: &str, _mode: &str) -> Result<(), MinerError> {
         todo!()
     }
 
-    fn config(&self, ip: &str, mode: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
+    fn config(&self, _ip: &str, _mode: &str, _pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
         todo!()
     }
 }
