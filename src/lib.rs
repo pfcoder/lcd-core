@@ -83,9 +83,10 @@ pub async fn config(
     runtime: tokio::runtime::Handle,
     ips: Vec<String>,
     account: Vec<PoolConfig>,
+    run_mode: String,
 ) -> Result<i64, String> {
-    info!("config ips: {:?}", ips);
-    miner::entry::config_batch(runtime, ips, account).await
+    //info!("config ips: {:?}", ips);
+    miner::entry::config_batch(runtime, ips, account, run_mode).await
 }
 
 /// watching

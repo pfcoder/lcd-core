@@ -21,22 +21,30 @@ impl MinerOperation for BlueStarMiner {
 
     fn switch_account_if_diff(
         &self,
-        _ip: String,
-        _account: Account,
+        _ip: &str,
+        _account: &Account,
         _is_force: bool,
     ) -> AsyncOpType<()> {
         todo!()
     }
 
-    fn query(&self, _ip: String, _timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
+    fn query(&self, _ip: &str, _timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         todo!()
     }
 
-    fn reboot(&self, _ip: String) -> Result<(), MinerError> {
+    fn reboot(&self, _ip: &str) -> Result<(), MinerError> {
         todo!()
     }
 
-    fn config_pool(&self, _ip: String, _pools: Vec<PoolConfig>) -> Result<(), MinerError> {
+    fn config_pool(&self, _ip: &str, _pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
+        todo!()
+    }
+
+    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError> {
+        todo!()
+    }
+
+    fn config(&self, ip: &str, mode: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
         todo!()
     }
 }

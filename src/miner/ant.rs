@@ -93,7 +93,7 @@ impl AntConfig {
 
     pub fn apply_account(&mut self, account: &Account, ip: &str) {
         let ip_splited: Vec<&str> = ip.split('.').collect();
-        let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+        let user = account.name.clone() + ".s" + ip_splited[2] + "x" + ip_splited[3];
         self.pools[0].user = user.clone();
         self.pools[0].pass = account.password.clone();
         self.pools[0].url = account.pool1.clone();
@@ -105,10 +105,10 @@ impl AntConfig {
         self.pools[2].url = account.pool2.clone();
     }
 
-    pub fn apply_config_pools(&mut self, pools: Vec<PoolConfig>, ip: &str) {
+    pub fn apply_config_pools(&mut self, pools: &Vec<PoolConfig>, ip: &str) {
         let ip_splited: Vec<&str> = ip.split('.').collect();
         for (i, pool) in pools.iter().enumerate() {
-            let user = pool.user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
+            let user = pool.user.clone() + ".s" + ip_splited[2] + "x" + ip_splited[3];
             self.pools[i].user = user.clone();
             self.pools[i].pass = pool.password.clone();
             self.pools[i].url = pool.url.clone();
@@ -144,10 +144,12 @@ impl MinerOperation for AntMiner {
 
     fn switch_account_if_diff(
         &self,
-        ip: String,
-        account: Account,
+        ip: &str,
+        account: &Account,
         is_force: bool,
     ) -> AsyncOpType<()> {
+        let ip = ip.to_string();
+        let account = account.clone();
         Box::pin(async move {
             let mut conf = get_conf(&ip)?;
 
@@ -166,7 +168,7 @@ impl MinerOperation for AntMiner {
         })
     }
 
-    fn query(&self, ip: String, _timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
+    fn query(&self, ip: &str, _timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         let json = query_machine(&ip)?;
         let conf = get_conf(&ip)?;
 
@@ -187,7 +189,7 @@ impl MinerOperation for AntMiner {
 
         // construct MachineInfo
         Ok(MachineInfo {
-            ip: ip.clone(),
+            ip: ip.to_string(),
             elapsed: elapsed_str,
             hash_real: format!("{:.3} THS", hash_real / 1000.0),
             hash_avg: format!("{:.3} THS", hash_avg / 1000.0),
@@ -203,7 +205,7 @@ impl MinerOperation for AntMiner {
             worker2: conf.pools[1].user.clone(),
             record: MachineRecord {
                 id: 0,
-                ip: ip,
+                ip: ip.to_string(),
                 machine_type,
                 work_mode: 0,
                 hash_real,
@@ -217,15 +219,26 @@ impl MinerOperation for AntMiner {
         })
     }
 
-    fn reboot(&self, ip: String) -> Result<(), MinerError> {
-        Ok(reboot(&ip)?)
+    fn reboot(&self, ip: &str) -> Result<(), MinerError> {
+        Ok(reboot(ip)?)
     }
 
-    fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
-        let mut conf = get_conf(&ip)?;
-        conf.apply_config_pools(pools, &ip);
-        update_conf(&ip, &conf)?;
-        reboot(&ip)
+    fn config_pool(&self, ip: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
+        let mut conf = get_conf(ip)?;
+        conf.apply_config_pools(pools, ip);
+        update_conf(ip, &conf)?;
+        reboot(ip)
+    }
+
+    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError> {
+        todo!()
+    }
+
+    fn config(&self, ip: &str, _mode: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
+        let mut conf = get_conf(ip)?;
+        conf.apply_config_pools(pools, ip);
+        update_conf(ip, &conf)?;
+        reboot(ip)
     }
 }
 
@@ -398,7 +411,7 @@ mod tests {
         env_logger::try_init();
         let ip = "192.168.190.231";
         let miner = AntMiner {};
-        let info = miner.query(ip.to_string(), 3).unwrap();
+        let info = miner.query(ip, 3).unwrap();
         info!("ant info: {:?}", info);
         assert!(true);
     }

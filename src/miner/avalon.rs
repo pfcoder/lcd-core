@@ -10,13 +10,6 @@ use regex::Regex;
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 
-// const INFO_URL: &str = "http://{}/updatecgconf.cgi?num=";
-// const CONFIG_UPDATE_URL: &str = "http://{}/cgconf.cgi";
-// const LOGIN_URL: &str = "http://{}/login.cgi";
-// const REBOOT_URL: &str = "http://{}/reboot.cgi";
-// const STATUS_URL: &str = "http://{}/get_home.cgi";
-// const MINER_TYPE_URL: &str = "http://{}/get_minerinfo.cgi";
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AvalonWorkStatus {
     pub elapsed: i64,
@@ -100,58 +93,6 @@ where
     deserializer.deserialize_any(StringOrInt)
 }
 
-// impl AvalonConfig {
-//     pub fn to_form_string(&self) -> Result<String, MinerError> {
-//         serde_urlencoded::to_string(self).map_err(|err| MinerError::from(err))
-//     }
-
-//     pub fn apply_account(&mut self, account: &Account, ip: &str) {
-//         let ip_splited: Vec<&str> = ip.split('.').collect();
-//         let user = account.name.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-//         self.pool1 = account.pool1.clone();
-//         self.worker1 = user.clone();
-//         self.passwd1 = account.password.clone();
-//         self.pool2 = account.pool2.clone();
-//         self.worker2 = user.clone();
-//         self.passwd2 = account.password.clone();
-//         self.pool3 = account.pool3.clone();
-//         self.worker3 = user.clone();
-//         self.passwd3 = account.password.clone();
-//         self.mode = if account.run_mode == "高功" { 1 } else { 0 };
-//     }
-
-//     pub fn is_same_account(&self, account: &Account) -> bool {
-//         // check string before .
-//         let worker1_splited: Vec<&str> = self.worker1.split('.').collect();
-//         let account_name_splited: Vec<&str> = account.name.split('.').collect();
-//         worker1_splited[0] == account_name_splited[0]
-//     }
-
-//     pub fn is_same_mode(&self, account: &Account) -> bool {
-//         self.mode == if account.run_mode == "高功" { 1 } else { 0 }
-//     }
-
-//     pub fn apply_pool_config(&mut self, pools: Vec<PoolConfig>, ip: &str) {
-//         let ip_splited: Vec<&str> = ip.split('.').collect();
-//         let pool_prefix = "stratum+tcp://";
-//         if pools.len() > 0 {
-//             self.pool1 = format!("{}{}", pool_prefix, pools[0].url);
-//             self.worker1 = pools[0].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-//             self.passwd1 = pools[0].password.clone();
-//         }
-//         if pools.len() > 1 {
-//             self.pool2 = format!("{}{}", pool_prefix, pools[1].url);
-//             self.worker2 = pools[1].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-//             self.passwd2 = pools[1].password.clone();
-//         }
-//         if pools.len() > 2 {
-//             self.pool3 = format!("{}{}", pool_prefix, pools[2].url);
-//             self.worker3 = pools[2].user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
-//             self.passwd3 = pools[2].password.clone();
-//         }
-//     }
-// }
-
 /// Avalon miner
 #[derive(Debug, Clone)]
 pub struct AvalonMiner {}
@@ -176,10 +117,12 @@ impl MinerOperation for AvalonMiner {
 
     fn switch_account_if_diff(
         &self,
-        ip: String,
-        account: Account,
+        ip: &str,
+        account: &Account,
         is_force: bool,
     ) -> AsyncOpType<()> {
+        let ip = ip.to_string();
+        let account = account.clone();
         Box::pin(async move {
             // login --> get config --> update config --> reboot
             match switch_if_need(&ip, &account, is_force) {
@@ -194,7 +137,7 @@ impl MinerOperation for AvalonMiner {
         })
     }
 
-    fn query(&self, ip: String, timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
+    fn query(&self, ip: &str, timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         let versio = tcp_query_version(&ip, timeout_seconds)?;
         // extract MODEL=xxx from version
         let re = Regex::new(r"MODEL=([^,]+),").unwrap();
@@ -217,7 +160,7 @@ impl MinerOperation for AvalonMiner {
         );
 
         Ok(MachineInfo {
-            ip: ip.clone(),
+            ip: ip.to_string(),
             elapsed: elapsed_str,
             hash_real: format!("{:.2} THS", work.hash_real / 1000.0),
             hash_avg: format!("{:.2} THS", work.hash_avg / 1000.0),
@@ -237,7 +180,7 @@ impl MinerOperation for AvalonMiner {
             pool_hash_real: "N/A".to_string(),
             record: MachineRecord {
                 id: 0,
-                ip: ip,
+                ip: ip.to_string(),
                 machine_type,
                 work_mode: work.work_mode,
                 hash_real: work.hash_real,
@@ -252,74 +195,11 @@ impl MinerOperation for AvalonMiner {
         })
     }
 
-    // fn query(&self, ip: String) -> Result<MachineInfo, MinerError> {
-    //     let machine_json = query_machine(&ip)?;
-    //     let miner_json = query_miner_type(&ip)?;
-    //     let conf = get_config(&mut Easy::new(), &ip)?.unwrap();
-
-    //     let machine_type = miner_json["hwtype"].as_str().unwrap_or("unknown");
-    //     let elapsed = machine_json["elapsed"]
-    //         .as_str()
-    //         .unwrap_or("0")
-    //         .parse::<u64>()
-    //         .unwrap_or(0);
-    //     let hash_real = machine_json["hash_5m"]
-    //         .as_str()
-    //         .unwrap_or("0")
-    //         .parse::<f64>()
-    //         .unwrap_or(0.0);
-    //     let hash_avg = machine_json["av"]
-    //         .as_str()
-    //         .unwrap_or("0")
-    //         .parse::<f64>()
-    //         .unwrap_or(0.0);
-    //     let temp0 = machine_json["temperature"].as_str().unwrap_or("0");
-    //     let temp1 = machine_json["MTavg1"].as_str().unwrap_or("0");
-    //     let temp2 = machine_json["MTavg2"].as_str().unwrap_or("0");
-    //     let temp3 = machine_json["MTavg3"].as_str().unwrap_or("0");
-    //     // elapsed is seconds, convert to H:M:S
-    //     let elapsed_str = format!(
-    //         "{}H {}M {}S",
-    //         elapsed / 3600,
-    //         (elapsed % 3600) / 60,
-    //         elapsed % 60
-    //     );
-
-    //     let mut pool1 = conf.pool1.clone();
-    //     let mut pool2 = conf.pool2.clone();
-    //     if pool1.starts_with("stratum+tcp://") {
-    //         pool1.drain(..14);
-    //     }
-    //     if pool2.starts_with("stratum+tcp://") {
-    //         pool2.drain(..14);
-    //     }
-
-    //     Ok(MachineInfo {
-    //         ip,
-    //         elapsed: elapsed_str,
-    //         hash_real: format!("{:.2} THS", hash_real),
-    //         hash_avg: format!("{:.2} THS", hash_avg),
-    //         machine_type: machine_type.to_string(),
-    //         temp: format!("{}/{}/{}/{}", temp0, temp1, temp2, temp3),
-    //         fan: "0".to_string(),
-    //         // remote "stratum+tcp://" prefix
-    //         pool1,
-    //         worker1: conf.worker1.clone(),
-    //         pool2,
-    //         worker2: conf.worker2.clone(),
-    //     })
-    // }
-
-    fn reboot(&self, ip: String) -> Result<(), MinerError> {
-        tcp_write_reboot(&ip, 3)
+    fn reboot(&self, ip: &str) -> Result<(), MinerError> {
+        tcp_write_reboot(ip, 3)
     }
 
-    fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
-        // let mut easy = Easy::new();
-        // let mut conf = get_config(&mut easy, &ip)?.unwrap();
-        // conf.apply_pool_config(pools, &ip);
-        // update_miner_config(&mut easy, &ip, &conf)?;
-        // reboot(&mut easy, &ip)
+    fn config_pool(&self, ip: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
         let ip_splited: Vec<&str> = ip.split('.').collect();
         let pool_prefix = "stratum+tcp://";
 
@@ -328,15 +208,33 @@ impl MinerOperation for AvalonMiner {
             pool.url = pool_prefix.to_string() + &pool.url;
             pool.user = pool.user.clone() + "." + ip_splited[2] + "x" + ip_splited[3];
         }
-        tcp_write_pool_config(&ip, update_pools, 3)?;
-        tcp_write_reboot(&ip, 3)
+        tcp_write_pool_config(ip, update_pools, 3)?;
+        tcp_write_reboot(ip, 3)
+    }
+
+    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError> {
+        tcp_write_workmode(ip, if mode == "高功" { 1 } else { 0 }, 3)
+    }
+
+    fn config(&self, ip: &str, mode: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
+        let ip_splited: Vec<&str> = ip.split('.').collect();
+        let pool_prefix = "stratum+tcp://";
+
+        let mut update_pools = pools.clone();
+        for pool in update_pools.iter_mut() {
+            pool.url = pool_prefix.to_string() + &pool.url;
+            pool.user = pool.user.clone() + ".a" + ip_splited[2] + "x" + ip_splited[3];
+        }
+        tcp_write_pool_config(ip, update_pools, 3)?;
+        tcp_write_workmode(ip, if mode == "高功" { 1 } else { 0 }, 3)?;
+        tcp_write_reboot(ip, 3)
     }
 }
 
 fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), MinerError> {
     let timeout = 3i64;
-    let account_result = tcp_query_account(&ip, timeout)?;
-    let work = tcp_query_status(&ip, timeout)?;
+    let account_result = tcp_query_account(ip, timeout)?;
+    let work = tcp_query_status(ip, timeout)?;
     //info!("avalon account result: {} {}", ip, account_result);
     let worker = account_result.split('.').next().unwrap();
     let config_worker = account.name.split('.').next().unwrap();
@@ -358,238 +256,12 @@ fn switch_if_need(ip: &str, account: &Account, is_force: bool) -> Result<(), Min
         run_mode: account.run_mode.clone(),
     };
 
-    tcp_write_pool(&ip, &act, timeout)?;
-    tcp_write_workmode(&ip, if account.run_mode == "高功" { 1 } else { 0 }, timeout)?;
-    tcp_write_reboot(&ip, timeout)?;
+    tcp_write_pool(ip, &act, timeout)?;
+    tcp_write_workmode(ip, if account.run_mode == "高功" { 1 } else { 0 }, timeout)?;
+    tcp_write_reboot(ip, timeout)?;
     info!("avalon end switch account: {}", ip);
     Ok(())
 }
-
-// fn home(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
-//     let url = format!("http://{}/", ip);
-//     info!("avalon home url: {}", url);
-
-//     easy.url(&url)?;
-//     easy.post(false)?;
-//     match easy.perform() {
-//         Ok(_) => (),
-//         Err(e) => {
-//             info!("avalon home error: {:?}", e);
-//             // try to reboot
-//             reboot(easy, ip)?;
-//         }
-//     }
-
-//     info!("avalon home status: {:?}", easy.response_code()?);
-
-//     Ok(())
-// }
-
-// fn login(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
-//     let url = LOGIN_URL.replace("{}", ip);
-//     info!("avalon login url: {}", url);
-
-//     let mut params = HashMap::new();
-//     params.insert("username", "root");
-//     params.insert("passwd", "root");
-
-//     easy.url(&url)?;
-//     easy.post(true)?;
-
-//     let mut list = List::new();
-//     list.append("Content-Type: application/x-www-form-urlencoded")?;
-//     easy.http_headers(list)?;
-
-//     let mut data = String::new();
-//     for (key, value) in params {
-//         data.push_str(&format!("{}={}&", key, value));
-//     }
-//     data.pop(); // remove the last '&'
-//     easy.post_fields_copy(data.as_bytes())?;
-
-//     let mut response_body = Vec::new();
-//     {
-//         let mut transfer = easy.transfer();
-//         transfer.write_function(|new_data| {
-//             response_body.extend_from_slice(new_data);
-//             Ok(new_data.len())
-//         })?;
-//         transfer.perform()?;
-//     }
-
-//     easy.perform()?;
-
-//     info!("avalon login status: {:?}", easy.response_code()?);
-//     // log out body
-//     let _body = String::from_utf8(response_body)?;
-//     //info!("Response body: {}", body);
-
-//     Ok(())
-// }
-
-// fn query_miner_type(ip: &str) -> Result<serde_json::Value, MinerError> {
-//     let url = MINER_TYPE_URL.replace("{}", ip);
-//     //info!("avalon query_minet_type url: {}", url);
-
-//     let mut easy = Easy::new();
-//     easy.url(&url)?;
-//     easy.post(false)?;
-//     let mut data = Vec::new();
-//     {
-//         let mut transfer = easy.transfer();
-//         transfer.write_function(|new_data| {
-//             data.extend_from_slice(new_data);
-//             Ok(new_data.len())
-//         })?;
-//         transfer.perform()?;
-//     }
-//     easy.perform()?;
-//     let body = String::from_utf8(data).unwrap();
-
-//     let re = Regex::new(r"minerinfoCallback\((\{.*\})\)").unwrap();
-//     match re.captures(&body) {
-//         Some(caps) => {
-//             let target = caps.get(1).unwrap().as_str();
-//             // convert to json
-//             let json: serde_json::Value = serde_json::from_str(target)?;
-//             //info!("avalon query_minet_type result: {:?}", json);
-//             Ok(json)
-//         }
-//         None => Err(MinerError::ReadAvalonConfigError),
-//     }
-// }
-
-// fn query_machine(ip: &str) -> Result<serde_json::Value, MinerError> {
-//     let url = STATUS_URL.replace("{}", ip);
-//     //info!("avalon query_machine url: {}", url);
-
-//     let mut easy = Easy::new();
-//     easy.url(&url)?;
-//     easy.post(false)?;
-//     let mut data = Vec::new();
-//     {
-//         let mut transfer = easy.transfer();
-//         transfer.write_function(|new_data| {
-//             data.extend_from_slice(new_data);
-//             Ok(new_data.len())
-//         })?;
-//         transfer.perform()?;
-//     }
-//     easy.perform()?;
-//     let body = String::from_utf8(data).unwrap();
-
-//     let re = Regex::new(r"homeCallback\((\{.*?\})\)").unwrap();
-//     match re.captures(&body) {
-//         Some(caps) => {
-//             let target = caps.get(1).unwrap().as_str();
-//             //info!("target: {}", target);
-//             // convert to json
-//             let json: serde_json::Value = serde_json::from_str(target)?;
-//             //info!("avalon query_machine result: {:?}", json);
-//             Ok(json)
-//         }
-//         None => Err(MinerError::ReadAvalonConfigError),
-//     }
-// }
-
-// fn get_config(easy: &mut Easy, ip: &str) -> Result<Option<AvalonConfig>, MinerError> {
-//     let url = INFO_URL.replace("{}", ip) + rand::random::<u64>().to_string().as_str();
-//     //info!("avalon get_config url: {}", url);
-
-//     easy.url(&url)?;
-//     easy.post(false)?;
-//     let mut data = Vec::new();
-//     {
-//         let mut transfer = easy.transfer();
-//         transfer.write_function(|new_data| {
-//             data.extend_from_slice(new_data);
-//             Ok(new_data.len())
-//         })?;
-//         transfer.perform()?;
-//     }
-//     easy.perform()?;
-//     let body = String::from_utf8(data).unwrap();
-
-//     let re = Regex::new(r"CGConfCallback\((\{.*\})\)").unwrap();
-//     match re.captures(&body) {
-//         Some(caps) => {
-//             let target = caps.get(1).unwrap().as_str();
-//             // convert to json
-//             let config: AvalonConfig = serde_json::from_str(target)?;
-//             //info!("avalon get_config result: {:?}", config);
-//             Ok(Some(config))
-//         }
-//         None => Err(MinerError::ReadAvalonConfigError),
-//     }
-// }
-
-// fn update_miner_config(easy: &mut Easy, ip: &str, conf: &AvalonConfig) -> Result<(), MinerError> {
-//     // post conf as www-form-urlencoded
-//     let url = CONFIG_UPDATE_URL.replace("{}", ip); // + rand::random::<u64>().to_string().as_str();
-//                                                    //info!("avalon update_miner_config url: {}", url);
-
-//     easy.url(&url)?;
-//     easy.post(true)?;
-
-//     let mut list = List::new();
-//     list.append("Content-Type: application/x-www-form-urlencoded")?;
-//     easy.http_headers(list)?;
-
-//     let data = conf.to_form_string()?;
-//     easy.post_fields_copy(data.as_bytes())?;
-
-//     let mut response_body = Vec::new();
-//     {
-//         let mut transfer = easy.transfer();
-//         transfer.write_function(|new_data| {
-//             response_body.extend_from_slice(new_data);
-//             Ok(new_data.len())
-//         })?;
-//         transfer.perform()?;
-//     }
-
-//     easy.perform()?;
-
-//     //info!("avalon update config result: {:?}", easy.response_code()?);
-//     // log out body
-//     let _body = String::from_utf8(response_body)?;
-
-//     Ok(())
-//     // regular extract target  from ...CGConfCallback({target}}...
-// }
-
-// fn reboot(easy: &mut Easy, ip: &str) -> Result<(), MinerError> {
-// let url = REBOOT_URL.replace("{}", ip);
-// //info!("avalon reboot url: {}", url);
-
-// easy.url(&url)?;
-// easy.post(true)?;
-
-// let mut list = List::new();
-// list.append("Content-Type: application/x-www-form-urlencoded")?;
-// easy.http_headers(list)?;
-
-// let data = "reboot=1";
-// easy.post_fields_copy(data.as_bytes())?;
-// // set timeout to 5s
-// easy.timeout(Duration::from_secs(5))?;
-
-// match easy.perform() {
-//     Ok(_) => (),
-//     Err(e) => {
-//         //info!("avalon reboot error: {:?}", e);
-//         if e.code() == 28 || e.code() == 56 {
-//             // timeout or connection reset is ok
-//         } else {
-//             return Err(MinerError::CurlError(e));
-//         }
-//     }
-// }
-
-// //info!("avalon reboot status: {:?}", easy.response_code()?);
-
-// Ok(())
-//}
 
 fn tcp_cmd(
     ip: &str,
@@ -720,25 +392,6 @@ fn tcp_write_pool_config(
     pools: Vec<PoolConfig>,
     timeout_seconds: i64,
 ) -> Result<(), MinerError> {
-    // ascset|0,setpool,root,root,2,stratum+tcp://btc.ss.poolin.com:443,cctrix.001,123
-    // let pool1 = format!(
-    //     "ascset|0,setpool,root,root,0,{},{},{}",
-    //     pool.pool1, pool.name, pool.password
-    // );
-
-    // let pool2 = format!(
-    //     "ascset|0,setpool,root,root,1,{},{},{}",
-    //     pool.pool2, pool.name, pool.password
-    // );
-
-    // let pool3 = format!(
-    //     "ascset|0,setpool,root,root,2,{},{},{}",
-    //     pool.pool3, pool.name, pool.password
-    // );
-
-    // tcp_cmd(ip, 4028, &pool1, true)?;
-    // tcp_cmd(ip, 4028, &pool2, true)?;
-    // tcp_cmd(ip, 4028, &pool3, true)?;
     for (i, pool) in pools.iter().enumerate() {
         let cmd = format!(
             "ascset|0,setpool,root,root,{},{},{},{}",
@@ -883,9 +536,7 @@ mod tests {
 
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let result = miner
-                .switch_account_if_diff(ip.to_string(), account, true)
-                .await;
+            let result = miner.switch_account_if_diff(ip, &account, true).await;
             match result {
                 Ok(_) => println!("Switch account successful"),
                 Err(e) => println!("Error switching account: {:?}", e),
@@ -916,7 +567,7 @@ mod tests {
         let _ = *SETUP;
         let ip = "192.168.189.207";
         let miner = AvalonMiner {};
-        let info = miner.query(ip.to_string(), 3).unwrap();
+        let info = miner.query(ip, 3).unwrap();
         info!("avalon info: {:?}", info);
     }
 

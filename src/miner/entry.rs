@@ -166,15 +166,17 @@ pub type AsyncOpType<T> = Pin<Box<dyn std::future::Future<Output = Result<T, Min
 pub trait MinerOperation {
     fn info(&self) -> MinerInfo;
     fn detect(&self, headers: Vec<String>, body: &str) -> Result<MinerType, MinerError>;
-    fn query(&self, ip: String, timeout_seconds: i64) -> Result<MachineInfo, MinerError>;
+    fn query(&self, ip: &str, timeout_seconds: i64) -> Result<MachineInfo, MinerError>;
     fn switch_account_if_diff(
         &self,
-        ip: String,
-        account: Account,
+        ip: &str,
+        account: &Account,
         is_force: bool,
     ) -> AsyncOpType<()>;
-    fn reboot(&self, ip: String) -> Result<(), MinerError>;
-    fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError>;
+    fn reboot(&self, ip: &str) -> Result<(), MinerError>;
+    fn config_pool(&self, ip: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError>;
+    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError>;
+    fn config(&self, ip: &str, mode: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError>;
 }
 
 #[derive(Debug, Clone)]
@@ -209,8 +211,8 @@ impl MinerOperation for MinerType {
 
     fn switch_account_if_diff(
         &self,
-        ip: String,
-        account: Account,
+        ip: &str,
+        account: &Account,
         is_force: bool,
     ) -> AsyncOpType<()> {
         match self {
@@ -220,7 +222,7 @@ impl MinerOperation for MinerType {
         }
     }
 
-    fn query(&self, ip: String, timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
+    fn query(&self, ip: &str, timeout_seconds: i64) -> Result<MachineInfo, MinerError> {
         match self {
             MinerType::Ant(miner) => miner.query(ip, timeout_seconds),
             MinerType::Avalon(miner) => miner.query(ip, timeout_seconds),
@@ -228,7 +230,7 @@ impl MinerOperation for MinerType {
         }
     }
 
-    fn reboot(&self, ip: String) -> Result<(), MinerError> {
+    fn reboot(&self, ip: &str) -> Result<(), MinerError> {
         match self {
             MinerType::Ant(miner) => miner.reboot(ip),
             MinerType::Avalon(miner) => miner.reboot(ip),
@@ -236,11 +238,27 @@ impl MinerOperation for MinerType {
         }
     }
 
-    fn config_pool(&self, ip: String, pools: Vec<PoolConfig>) -> Result<(), MinerError> {
+    fn config_pool(&self, ip: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
         match self {
             MinerType::Ant(miner) => miner.config_pool(ip, pools),
             MinerType::Avalon(miner) => miner.config_pool(ip, pools),
             MinerType::BlueStar(miner) => miner.config_pool(ip, pools),
+        }
+    }
+
+    fn config_mode(&self, ip: &str, mode: &str) -> Result<(), MinerError> {
+        match self {
+            MinerType::Ant(miner) => miner.config_mode(ip, mode),
+            MinerType::Avalon(miner) => miner.config_mode(ip, mode),
+            MinerType::BlueStar(miner) => miner.config_mode(ip, mode),
+        }
+    }
+
+    fn config(&self, ip: &str, mode: &str, pools: &Vec<PoolConfig>) -> Result<(), MinerError> {
+        match self {
+            MinerType::Ant(miner) => miner.config(ip, mode, pools),
+            MinerType::Avalon(miner) => miner.config(ip, mode, pools),
+            MinerType::BlueStar(miner) => miner.config(ip, mode, pools),
         }
     }
 }
@@ -298,7 +316,7 @@ fn find_miner(ip: &str, timeout_seconds: i64) -> Result<MinerType, MinerError> {
 pub fn scan_miner_detail(ip: String, timeout_seconds: i64) -> AsyncOpType<MachineInfo> {
     Box::pin(async move {
         let miner = find_miner(&ip, timeout_seconds)?;
-        let mut machine_info = miner.query(ip.clone(), timeout_seconds)?;
+        let mut machine_info = miner.query(&ip, timeout_seconds)?;
         // process db record
         db::insert_machine_record(&machine_info.record)?;
         // query pool record
@@ -321,7 +339,7 @@ pub fn scan_miner_detail(ip: String, timeout_seconds: i64) -> AsyncOpType<Machin
 fn scan_reboot(ip: String) -> Result<(), MinerError> {
     info!("try to reboot: {}", ip);
     let miner = find_miner(&ip, 3)?;
-    miner.reboot(ip)
+    miner.reboot(&ip)
 }
 
 pub async fn load_machines_from_feishu(
@@ -610,8 +628,8 @@ pub async fn switch_if_need(
                 let ip = machine.ip.clone();
                 let miner: MinerType = miner_type.as_str().into();
                 handles.push(runtime.spawn(miner.switch_account_if_diff(
-                    ip,
-                    switch_account,
+                    &ip,
+                    &switch_account,
                     false,
                 )));
 
@@ -791,13 +809,15 @@ pub async fn config_batch(
     runtime: tokio::runtime::Handle,
     ips: Vec<String>,
     pools: Vec<PoolConfig>,
+    run_mode: String,
 ) -> Result<i64, String> {
     let mut handles = vec![];
     for ip in ips {
         let act = pools.clone();
+        let md = run_mode.clone();
         handles.push(runtime.spawn(async move {
             let miner = find_miner(&ip, 3)?;
-            miner.config_pool(ip, act.clone())
+            miner.config(&ip, &md, &act)
         }));
     }
 
